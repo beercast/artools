@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "observer_site": {
+    "name": "SRT site",
+    "latitude_dms": "39d29m35.060604s",
+    "longitude_dms": "9d14m42.544464s",
+    "height_m": 671.6665,
+    "provenance": "Explicit location preserved in a commented EarthLocation line in legacy/original/artools.py"
+  },
+  "astronomical_sources": {
+    "3C84": {
+      "icrs_j2000_ra": "03 19 48.1599902040",
+      "icrs_j2000_dec": "+41 30 42.108850836",
+      "provenance": "SIMBAD snapshot frozen on 2026-09-10"
+    },
+    "W3(OH)": {
+      "icrs_j2000_ra": "02 27 04.1",
+      "icrs_j2000_dec": "+61 52 22",
+      "provenance": "SIMBAD snapshot frozen on 2026-09-10"
+    }
+  },
+  "satellite": {
+    "name": "EUTELSAT HOTBIRD 13B",
+    "tle": [
+      "EUTELSAT HOTBIRD 13B",
+      "1 29270U 06032A   23243.11624506  .00000071  00000+0  00000+0 0  9996",
+      "2 29270   0.0872  56.3198 0003129 117.8334 219.6987  1.00271788 62625"
+    ],
+    "provenance": "Fixed TLE embedded in legacy/original/tle_01.ipynb"
+  },
+  "physical_reference_cases_for_later_end_to_end_parity": {
+    "astronomical_cross_scan": {
+      "source": "W3(OH)",
+      "epoch": "2023-08-08 08:00:00",
+      "dt_s": 1.0,
+      "requested_n": 10,
+      "angle_deg": 1.0,
+      "pressure_hpa": 920.0,
+      "temperature_c": 20.0,
+      "relative_humidity": 65.0,
+      "legacy_result": "NameError because xscan() references undefined k"
+    },
+    "planet_raster_map": {
+      "body": "moon",
+      "epoch": "2026-08-31 22:30:00",
+      "dt_s": 0.25,
+      "requested_n": 25,
+      "angle_deg": 0.5
+    },
+    "satellite_tracking": {
+      "satellite": "EUTELSAT HOTBIRD 13B",
+      "epoch": "2023-08-31 12:11:00",
+      "dt_s": 600.0,
+      "requested_n": 144,
+      "refraction": true
+    }
+  }
+}
