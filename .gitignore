@@ -4,3 +4,5 @@ ROADMAP.md
 docs
 legacy/characterization/README.md
 tests/regression/README.md
+build/
+__pycache__

@@ -65,6 +65,71 @@ class ControlledSystem:
 
 
 @dataclass(frozen=True, slots=True)
+class HorizontalCoordinates:
+    """Horizontal azimuth/elevation coordinates in degrees."""
+
+    azimuth_deg: float
+    elevation_deg: float
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.azimuth_deg):
+            raise ValueError("Horizontal azimuth must be finite")
+        if not math.isfinite(self.elevation_deg):
+            raise ValueError("Horizontal elevation must be finite")
+
+
+@dataclass(frozen=True, slots=True)
+class EquatorialCoordinates:
+    """ICRS equatorial coordinates in decimal degrees."""
+
+    ra_deg: float
+    dec_deg: float
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.ra_deg) or not 0.0 <= self.ra_deg < 360.0:
+            raise ValueError("Right ascension must be finite and within [0, 360) degrees")
+        if not math.isfinite(self.dec_deg) or not -90.0 <= self.dec_deg <= 90.0:
+            raise ValueError("Declination must be finite and within [-90, 90] degrees")
+
+
+@dataclass(frozen=True, slots=True)
+class AstronomicalSourceTarget:
+    """Named astronomical source to be resolved before tracking."""
+
+    name: str
+
+    def __post_init__(self) -> None:
+        if not self.name or not self.name.strip():
+            raise ValueError("Astronomical source name must not be empty")
+
+
+@dataclass(frozen=True, slots=True)
+class AtmosphericParameters:
+    """Atmospheric inputs used by horizontal-coordinate transformations.
+
+    ``relative_humidity`` is deliberately passed through with the same numerical
+    semantics as the legacy Astropy call. The legacy notebooks contain values
+    such as 56, 65, and 69, so this step does not silently reinterpret them as
+    percentages or fractions.
+    """
+
+    pressure_hpa: float = 0.0
+    temperature_c: float = 0.0
+    relative_humidity: float = 0.0
+    wavelength_m: float = 0.013627
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.pressure_hpa) or self.pressure_hpa < 0.0:
+            raise ValueError("Atmospheric pressure must be finite and non-negative")
+        if not math.isfinite(self.temperature_c):
+            raise ValueError("Atmospheric temperature must be finite")
+        if not math.isfinite(self.relative_humidity) or self.relative_humidity < 0.0:
+            raise ValueError("Relative humidity must be finite and non-negative")
+        if not math.isfinite(self.wavelength_m) or self.wavelength_m <= 0.0:
+            raise ValueError("Observing wavelength must be finite and greater than zero")
+
+
+@dataclass(frozen=True, slots=True)
 class TrajectoryPoint:
     """One time-tagged horizontal-coordinate trajectory point."""
 

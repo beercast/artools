@@ -59,15 +59,16 @@ and changed only through an explicit project decision.
 
 ## Current status
 
-This archive has completed **roadmap Step 2: core domain model and Auxiliary
-Telescope output writer**.
+This archive has completed **roadmap Step 3: astronomical-source tracking**.
 
-The package now exposes explicit target-family and trajectory-mode concepts, named
-SRT-site and Auxiliary Telescope configuration, validated trajectory data
-structures, and a target-independent writer for the selected Auxiliary Telescope
-file format. The production target-position calculations, CLI, and GUI are not
-implemented yet. See [ROADMAP.md](ROADMAP.md) for the complete implementation
-sequence and current project state.
+The package now supports astronomical-source tracking through Python APIs, with
+source resolution isolated from the coordinate transformation and from the generic
+tracking loop. The normal adapter uses SIMBAD for name resolution and Astropy for
+azimuth/elevation calculation at the SRT site. Deterministic mappings can be used
+without network access. Solar System tracking, satellite tracking, cross scans,
+raster maps, CLI, and GUI are added in later roadmap steps. See
+[ROADMAP.md](ROADMAP.md) for the complete implementation sequence and current
+project state.
 
 ## Installation
 
@@ -83,12 +84,27 @@ For development:
 python -m pip install -e '.[dev]'
 ```
 
-## Step 2 Python API
+Astronomical calculation and SIMBAD resolution are isolated in an optional extra.
+No versions are pinned yet:
 
-The current public API provides domain vocabulary and output serialization. For
-example, a caller can construct a `Trajectory` from UTC `TrajectoryPoint` values
-and serialize it with `AuxiliaryTelescopeTrajectoryWriter`. Target-position
-providers and trajectory-generation strategies are added in later roadmap steps.
+```bash
+python -m pip install -e '.[astronomy]'
+```
+
+For development with the physical astronomy parity test enabled:
+
+```bash
+python -m pip install -e '.[dev,astronomy]'
+```
+
+## Step 3 Python API
+
+The current public API supports astronomical tracking.
+`create_default_astronomical_tracking_service()` creates the normal SIMBAD +
+Astropy path. `MappingAstronomicalSourceResolver` can instead supply fixed source
+coordinates for deterministic or offline operation. Tracking returns the common
+`Trajectory` model, which can then be serialized by
+`AuxiliaryTelescopeTrajectoryWriter`.
 
 The writer intentionally preserves the legacy `savetrack()` negative-sub-degree
 formatting defect for exact compatibility. A value such as `-0.5` degrees is
@@ -103,10 +119,16 @@ Run:
 pytest
 ```
 
-At Step 2 the test suite verifies the package bootstrap, core domain validation,
-the frozen legacy characterization baseline, and exact Auxiliary Telescope writer
-compatibility against every valid frozen Step 1 trajectory. The tests do not
-require SIMBAD, CelesTrak, or other live astronomy services.
+At Step 3 the normal test suite verifies the package bootstrap, core domain
+validation, frozen legacy characterization, exact Auxiliary Telescope writer
+compatibility, generic tracking timing, resolver behavior, and astronomical
+tracking compatibility with the Step 1 mechanical reference. No normal test
+requires SIMBAD or another live service.
+
+A conditional physical parity test compares the exact preserved legacy Astropy
+path with the new Astropy adapter in the same environment. It runs when Astropy
+is installed and otherwise reports a skip. See
+[docs/astronomical-tracking.md](docs/astronomical-tracking.md).
 
 ## Repository layout
 
