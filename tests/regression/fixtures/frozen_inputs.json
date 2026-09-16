@@ -29,6 +29,16 @@
     "provenance": "Fixed TLE embedded in legacy/original/tle_01.ipynb"
   },
   "physical_reference_cases_for_later_end_to_end_parity": {
+    "astronomical_tracking": {
+      "source": "W3(OH)",
+      "epoch": "2023-08-08 08:00:00",
+      "dt_s": 1.0,
+      "requested_n": 5,
+      "pressure_hpa": 920.0,
+      "temperature_c": 20.0,
+      "relative_humidity": 65.0,
+      "wavelength_m": 0.013627
+    },
     "astronomical_cross_scan": {
       "source": "W3(OH)",
       "epoch": "2023-08-08 08:00:00",

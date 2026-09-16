@@ -22,6 +22,10 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
+astronomy = [
+    "astropy",
+    "astroquery",
+]
 dev = [
     "pytest>=8",
     "numpy>=1.26",
