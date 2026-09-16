@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "artools"
 version = "0.0.0"
-description = "Trajectory generation tools for the SRT antenna reference"
+description = "Trajectory generation tools for the Auxiliary Telescope at the SRT site"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
-    { name = "Franco Buffa and and beercast/artools contributors" }
+    { name = "ARTools contributors" }
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
