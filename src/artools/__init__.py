@@ -13,6 +13,15 @@ from .astronomical import (
     create_default_astronomical_tracking_service,
 )
 from .auxiliary_telescope import AuxiliaryTelescopeTrajectoryWriter
+from .solar_system import (
+    AstropySolarSystemPositionCalculator,
+    SolarSystemBody,
+    SolarSystemBodyTarget,
+    SolarSystemDependencyError,
+    SolarSystemTrackingService,
+    UnsupportedSolarSystemBodyError,
+    create_default_solar_system_tracking_service,
+)
 from .configuration import AUXILIARY_TELESCOPE, SRT_SITE
 from .domain import (
     AtmosphericParameters,
@@ -42,6 +51,13 @@ __all__ = [
     "AstronomicalTrackingService",
     "AstronomyDependencyError",
     "AstropyAstronomicalPositionCalculator",
+    "AstropySolarSystemPositionCalculator",
+    "SolarSystemBody",
+    "SolarSystemBodyTarget",
+    "SolarSystemDependencyError",
+    "SolarSystemTrackingService",
+    "UnsupportedSolarSystemBodyError",
+    "create_default_solar_system_tracking_service",
     "SRT_SITE",
     "AuxiliaryTelescopeTrajectoryWriter",
     "ControlledSystem",
