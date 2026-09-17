@@ -54,15 +54,13 @@
     }
   }
 
-  async function fallbackDynamicFields() {
-    if (window.htmx) return;
+  async function dynamicFields() {
     const family = document.getElementById("target-family");
     const mode = document.getElementById("trajectory-mode");
     const target = document.getElementById("dynamic-fields");
     if (!family || !mode || !target) return;
 
     async function refresh() {
-      if (window.htmx) return;
       const params = new URLSearchParams({ target_family: family.value, mode: mode.value });
       try {
         const response = await fetch(`/ui/fields?${params}`);
@@ -83,6 +81,6 @@
         submitTrajectory(form);
       });
     }
-    fallbackDynamicFields();
+    dynamicFields();
   });
 })();

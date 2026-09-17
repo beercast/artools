@@ -7,3 +7,4 @@ tests/regression/README.md
 build/
 __pycache__
 TODO.txt
+*egg-info*

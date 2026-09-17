@@ -89,7 +89,7 @@ from .domain import (
 try:
     __version__ = version("artools")
 except PackageNotFoundError:
-    __version__ = "0.0.0"
+    __version__ = "0.1.0"
 
 __all__ = [
     "ApplicationError",
