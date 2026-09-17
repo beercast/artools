@@ -4,17 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "artools"
-version = "0.0.0"
+version = "0.1.0"
 description = "Trajectory generation tools for the Auxiliary Telescope at the SRT site"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     { name = "ARTools contributors" }
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -27,26 +26,27 @@ artools-gui = "artools.web_launcher:main"
 
 [project.optional-dependencies]
 astronomy = [
-    "astropy",
-    "astroquery",
+    "astropy>=7.2,<9",
+    "astroquery>=0.4.10,<0.5",
 ]
 satellite = [
-    "astropy",
-    "pycraf",
+    "astropy>=7.2,<9",
+    "numpy>=2,<3",
+    "pycraf>=2.1,<3",
 ]
 web = [
-    "fastapi",
-    "uvicorn",
-    "python-multipart",
+    "fastapi>=0.128,<1",
+    "uvicorn>=0.48,<1",
+    "python-multipart>=0.0.29,<1",
 ]
 dev = [
-    "pytest>=8",
-    "numpy>=1.26",
-    "fastapi",
-    "uvicorn",
-    "python-multipart",
-    "httpx",
-    "httpx2",
+    "pytest>=8,<10",
+    "numpy>=2,<3",
+    # Starlette's TestClient dependency changed during the 0.x -> 1.x
+    # transition.  Keep both clients in the development environment so the
+    # supported FastAPI range remains testable across that transition.
+    "httpx>=0.28,<1",
+    "httpx2>=2.12,<3",
 ]
 
 [tool.setuptools]

@@ -138,13 +138,14 @@ def add_target(form: dict[str, str], family: str) -> None:
         )
 
 
-def test_index_is_local_web_ui_with_htmx_and_download_form() -> None:
+def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     client = TestClient(create_app(build_application()))
     response = client.get("/")
 
     assert response.status_code == 200
     assert "Auxiliary Telescope trajectory generator" in response.text
-    assert 'hx-get="/ui/fields"' in response.text
+    assert 'cdn.jsdelivr.net' not in response.text
+    assert 'https://' not in response.text
     assert 'action="/generate"' in response.text
     assert "/static/artools.css" in response.text
     assert "/static/artools.js" in response.text

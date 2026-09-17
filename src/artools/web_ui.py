@@ -7,10 +7,6 @@ from html import escape
 from .solar_system import SolarSystemBody
 
 
-HTMX_CDN = "https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js"
-HTMX_INTEGRITY = "sha384-H5SrcfygHmAuTDZphMHqBJLc3FhssKjG7w/CeCpFReSfwBWDTKpkzPP8c+cLsK+V"
-
-
 def render_index() -> str:
     """Render the complete first-load page."""
     return f'''<!doctype html>
@@ -20,7 +16,6 @@ def render_index() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ARTools</title>
   <link rel="stylesheet" href="/static/artools.css">
-  <script async src="{HTMX_CDN}" integrity="{HTMX_INTEGRITY}" crossorigin="anonymous"></script>
   <script defer src="/static/artools.js"></script>
 </head>
 <body>
@@ -50,9 +45,7 @@ def render_index() -> str:
           </label>
           <label>
             <span>Target family</span>
-            <select name="target_family" id="target-family"
-                    hx-get="/ui/fields" hx-target="#dynamic-fields"
-                    hx-include="#target-family,#trajectory-mode" hx-trigger="change">
+            <select name="target_family" id="target-family">
               <option value="astronomical">Astronomical source</option>
               <option value="solar-system">Solar System body</option>
               <option value="satellite">Artificial satellite</option>
@@ -60,9 +53,7 @@ def render_index() -> str:
           </label>
           <label>
             <span>Mode</span>
-            <select name="mode" id="trajectory-mode"
-                    hx-get="/ui/fields" hx-target="#dynamic-fields"
-                    hx-include="#target-family,#trajectory-mode" hx-trigger="change">
+            <select name="mode" id="trajectory-mode">
               <option value="track">Tracking</option>
               <option value="cross-scan">Cross scan</option>
               <option value="map">Raster map</option>
@@ -126,7 +117,7 @@ def render_index() -> str:
 
 
 def render_dynamic_fields(target_family: str, mode: str) -> str:
-    """Render target- and mode-specific form fields for HTMX replacement."""
+    """Render target- and mode-specific form fields for dynamic replacement."""
     family = target_family if target_family in {"astronomical", "solar-system", "satellite"} else "astronomical"
     selected_mode = mode if mode in {"track", "cross-scan", "map"} else "track"
 
@@ -217,4 +208,4 @@ def _atmosphere_fields() -> str:
       </details>'''
 
 
-__all__ = ["HTMX_CDN", "render_dynamic_fields", "render_index"]
+__all__ = ["render_dynamic_fields", "render_index"]
