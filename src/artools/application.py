@@ -144,10 +144,11 @@ class TrajectoryFileResult:
 class TrajectoryApplicationService:
     """Generate Auxiliary Telescope trajectories and trajectory files.
 
-    This service is intentionally synchronous. CLI callers block until the
-    trajectory has been calculated and written. A graphical interface should
-    call the same service from a GUI-owned worker rather than moving threading
-    or asynchronous behavior into the calculation core.
+    This service is intentionally synchronous. Presentation adapters block at
+    this boundary until the requested work is complete. The CLI calls it
+    directly; the local FastAPI adapter runs blocking calls in server-owned
+    worker threads rather than adding asynchronous behavior to the scientific
+    core.
     """
 
     def __init__(
