@@ -2,6 +2,14 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+from .application import (
+    ApplicationError,
+    OutputFileExistsError,
+    OutputPathError,
+    TrajectoryApplicationService,
+    TrajectoryFileResult,
+    TrajectoryGenerationRequest,
+)
 from .astronomical import (
     AstronomicalCrossScanService,
     AstronomicalRasterMapService,
@@ -84,6 +92,12 @@ except PackageNotFoundError:
     __version__ = "0.0.0"
 
 __all__ = [
+    "ApplicationError",
+    "OutputFileExistsError",
+    "OutputPathError",
+    "TrajectoryApplicationService",
+    "TrajectoryFileResult",
+    "TrajectoryGenerationRequest",
     "AUXILIARY_TELESCOPE",
     "AtmosphericParameters",
     "CELESTRAK_GP_ENDPOINT",

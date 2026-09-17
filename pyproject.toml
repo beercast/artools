@@ -21,6 +21,9 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+artools = "artools.cli:main"
+
 [project.optional-dependencies]
 astronomy = [
     "astropy",
