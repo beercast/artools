@@ -154,7 +154,7 @@ def request_from_web_form(
     parameters = TrajectoryRequestParameters(
         target_family=family,
         trajectory_mode=mode,
-        start_time=parse_utc_datetime(_required(values, "start", "Start time")),
+        start_time=parse_utc_datetime(_web_start_time(values)),
         sample_interval_s=_float(values, "dt", "Sample interval"),
         point_count=_int(values, "points", "Requested points"),
     )
@@ -202,6 +202,22 @@ def request_from_web_form(
         ),
     )
 
+
+
+def _web_start_time(values: Mapping[str, str]) -> str:
+    """Return the web start time as an explicit UTC ISO-8601 string.
+
+    The browser UI submits separate native date/time controls. The legacy
+    single ``start`` field remains accepted for backwards compatibility with
+    existing callers and tests.
+    """
+    start_date = _value(values, "start_date").strip()
+    start_time = _value(values, "start_time").strip()
+    if start_date or start_time:
+        if not start_date or not start_time:
+            raise WebInputError("Start date and start time must both be provided")
+        return f"{start_date}T{start_time}Z"
+    return _required(values, "start", "Start time")
 
 def _satellite_target(
     values: Mapping[str, str],

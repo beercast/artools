@@ -14,6 +14,17 @@
     return match ? match[1] : "trajectory.txt";
   }
 
+  function setCurrentUtc() {
+    const dateInput = document.getElementById("start-date");
+    const timeInput = document.getElementById("start-time");
+    if (!dateInput || !timeInput) return;
+
+    const now = new Date();
+    const pad = (value) => String(value).padStart(2, "0");
+    dateInput.value = `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}`;
+    timeInput.value = `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
+  }
+
   async function submitTrajectory(form) {
     const button = document.getElementById("generate-button");
     button.disabled = true;
@@ -81,6 +92,8 @@
         submitTrajectory(form);
       });
     }
+    const currentUtcButton = document.getElementById("use-current-utc");
+    if (currentUtcButton) currentUtcButton.addEventListener("click", setCurrentUtc);
     dynamicFields();
   });
 })();

@@ -149,6 +149,19 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     assert 'action="/generate"' in response.text
     assert "/static/artools.css" in response.text
     assert "/static/artools.js" in response.text
+    assert 'name="start_date"' in response.text
+    assert 'type="date"' in response.text
+    assert 'name="start_time"' in response.text
+    assert 'type="time"' in response.text
+    assert 'step="1"' in response.text
+    assert "Use current UTC time" in response.text
+    assert 'class="start-time-controls"' in response.text
+    assert 'class="sampling-grid"' in response.text
+
+    css = client.get("/static/artools.css")
+    assert css.status_code == 200
+    assert "grid-template-columns: minmax(0, 1.1fr) minmax(0, .8fr) auto" in css.text
+    assert ".sampling-grid { display: grid; grid-template-columns: repeat(2" in css.text
 
 
 @pytest.mark.parametrize(
@@ -316,3 +329,41 @@ def test_generation_uses_server_threadpool(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert called == ["_generate_download"]
+
+
+def test_web_accepts_native_date_and_time_controls_as_utc() -> None:
+    client = TestClient(create_app(build_application()))
+    form = base_form("solar-system", "track")
+    form.pop("start")
+    form.update(start_date="2026-08-31", start_time="22:30:00")
+    add_target(form, "solar-system")
+
+    response = client.post("/generate", data=form)
+
+    assert response.status_code == 200
+    assert response.text.splitlines()[0].startswith("2026/08/31 22:30:00.000")
+
+
+def test_web_requires_both_native_start_date_and_time() -> None:
+    client = TestClient(create_app(build_application()))
+    form = base_form("solar-system", "track")
+    form.pop("start")
+    form["start_date"] = "2026-08-31"
+    add_target(form, "solar-system")
+
+    response = client.post("/generate", data=form)
+
+    assert response.status_code == 400
+    assert "Start date and start time must both be provided" in response.json()["detail"]
+
+
+def test_packaged_javascript_sets_current_time_using_utc_components() -> None:
+    script = (Path(__file__).parents[2] / "src" / "artools" / "web_assets" / "artools.js").read_text()
+
+    assert "getUTCFullYear" in script
+    assert "getUTCMonth" in script
+    assert "getUTCDate" in script
+    assert "getUTCHours" in script
+    assert "getUTCMinutes" in script
+    assert "getUTCSeconds" in script
+    assert 'getElementById("use-current-utc")' in script

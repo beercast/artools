@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from html import escape
 
 from .solar_system import SolarSystemBody
@@ -9,6 +10,9 @@ from .solar_system import SolarSystemBody
 
 def render_index() -> str:
     """Render the complete first-load page."""
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    start_date = now.date().isoformat()
+    start_time = now.time().isoformat()
     return f'''<!doctype html>
 <html lang="en">
 <head>
@@ -63,22 +67,34 @@ def render_index() -> str:
 
         <div class="section-heading compact">
           <div><span class="step">02</span><h2>Parameters</h2></div>
-          <p>Times without an explicit offset are interpreted as UTC.</p>
+          <p>Start time is always interpreted explicitly as UTC.</p>
         </div>
 
-        <div class="grid three">
-          <label>
-            <span>Start time</span>
-            <input name="start" type="text" required placeholder="2026-08-31T22:30:00Z" autocomplete="off">
-          </label>
-          <label>
-            <span>Sample interval <small>s</small></span>
-            <input name="dt" type="number" required min="0.000001" step="any" value="1">
-          </label>
-          <label>
-            <span>Requested points</span>
-            <input name="points" type="number" required min="1" step="1" value="5">
-          </label>
+        <div class="parameter-grid">
+          <fieldset class="start-time-fieldset">
+            <legend>Start time <small>UTC</small></legend>
+            <div class="start-time-controls">
+              <label>
+                <span>Date</span>
+                <input name="start_date" id="start-date" type="date" required value="{start_date}">
+              </label>
+              <label>
+                <span>Time</span>
+                <input name="start_time" id="start-time" type="time" required step="1" value="{start_time}">
+              </label>
+              <button class="secondary utc-now-button" type="button" id="use-current-utc">Use current UTC time</button>
+            </div>
+          </fieldset>
+          <div class="sampling-grid">
+            <label>
+              <span>Sample interval <small>s</small></span>
+              <input name="dt" type="number" required min="0.000001" step="any" value="1">
+            </label>
+            <label>
+              <span>Requested points</span>
+              <input name="points" type="number" required min="1" step="1" value="5">
+            </label>
+          </div>
         </div>
 
         <div id="dynamic-fields">
