@@ -12,6 +12,7 @@ from urllib.request import urlopen
 
 from .configuration import SRT_SITE
 from .cross_scan import CrossScanParameters, generate_cross_scan_trajectory
+from .raster_map import RasterMapParameters, generate_raster_map_trajectory
 from .domain import (
     HorizontalCoordinates,
     ObserverSite,
@@ -377,6 +378,48 @@ class SatelliteCrossScanService:
         return generate_cross_scan_trajectory(parameters, provider, scan)
 
 
+class SatelliteRasterMapService:
+    """Generate raster maps from explicitly supplied TLE data."""
+
+    def __init__(
+        self,
+        calculator: SatellitePositionCalculator | None = None,
+        refraction_calculator: SatelliteRefractionCalculator | None = None,
+        site: ObserverSite = SRT_SITE,
+    ) -> None:
+        self._calculator = calculator or PycrafSatellitePositionCalculator()
+        self._refraction_calculator = (
+            refraction_calculator or PycrafSatelliteRefractionCalculator()
+        )
+        self._site = site
+
+    def raster_map(
+        self,
+        target: SatelliteTarget,
+        parameters: TrajectoryRequestParameters,
+        raster: RasterMapParameters | None = None,
+        refraction: SatelliteRefractionParameters | None = None,
+    ) -> Trajectory:
+        """Generate a satellite raster map without any catalog access."""
+        if parameters.target_family is not TargetFamily.SATELLITE:
+            raise ValueError(
+                "Satellite raster map requires target_family=SATELLITE"
+            )
+        if parameters.trajectory_mode is not TrajectoryMode.RASTER_MAP:
+            raise ValueError(
+                "SatelliteRasterMapService only supports RASTER_MAP"
+            )
+
+        provider = _create_satellite_position_provider(
+            target,
+            self._calculator,
+            self._refraction_calculator,
+            self._site,
+            refraction,
+        )
+        return generate_raster_map_trajectory(parameters, provider, raster)
+
+
 class TleCatalog(Protocol):
     """Retrieve named TLE data from an external catalog."""
 
@@ -478,6 +521,11 @@ def create_default_satellite_cross_scan_service() -> SatelliteCrossScanService:
     return SatelliteCrossScanService()
 
 
+def create_default_satellite_raster_map_service() -> SatelliteRasterMapService:
+    """Create the normal satellite raster-map service using Pycraf."""
+    return SatelliteRasterMapService()
+
+
 __all__ = [
     "CELESTRAK_GP_ENDPOINT",
     "CelesTrakTleCatalog",
@@ -485,6 +533,7 @@ __all__ = [
     "PycrafSatelliteRefractionCalculator",
     "SatelliteAtmosphericProfile",
     "SatelliteCrossScanService",
+    "SatelliteRasterMapService",
     "SatelliteDependencyError",
     "SatelliteNotFoundError",
     "SatellitePosition",
@@ -498,6 +547,7 @@ __all__ = [
     "TleData",
     "TleFormatError",
     "create_default_satellite_cross_scan_service",
+    "create_default_satellite_raster_map_service",
     "create_default_satellite_tracking_service",
     "normalize_satellite_azimuth_deg",
     "parse_tle_catalog",

@@ -12,10 +12,12 @@ from artools import (
     AtmosphericParameters,
     AuxiliaryTelescopeTrajectoryWriter,
     CrossScanParameters,
+    RasterMapParameters,
     HorizontalCoordinates,
     SRT_SITE,
     SolarSystemBody,
     SolarSystemCrossScanService,
+    SolarSystemRasterMapService,
     SolarSystemBodyTarget,
     SolarSystemDependencyError,
     SolarSystemTrackingService,
@@ -138,6 +140,43 @@ def test_solar_system_cross_scan_matches_step1_mechanical_baseline() -> None:
         SolarSystemBodyTarget(SolarSystemBody.MOON),
         parameters,
         CrossScanParameters(half_span_deg=0.3),
+    )
+
+    values = case["values"]
+    assert [point.azimuth_deg for point in trajectory] == pytest.approx(
+        values["azimuth_deg"]
+    )
+    assert [point.elevation_deg for point in trajectory] == pytest.approx(
+        values["elevation_deg"]
+    )
+    expected_file = (FIXTURE_DIR / case["file"]).read_text(encoding="ascii")
+    assert AuxiliaryTelescopeTrajectoryWriter().serialize(trajectory) == expected_file
+
+
+
+def _planet_raster_map_case() -> dict:
+    return next(
+        case for case in MANIFEST["cases"] if case["name"] == "planet_raster_map"
+    )
+
+
+def test_solar_system_raster_map_matches_step1_mechanical_baseline() -> None:
+    case = _planet_raster_map_case()
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    calculator = LegacyMechanicalSolarSystemCalculator(epoch)
+    service = SolarSystemRasterMapService(calculator=calculator)
+    parameters = TrajectoryRequestParameters(
+        target_family=TargetFamily.SOLAR_SYSTEM_BODY,
+        trajectory_mode=TrajectoryMode.RASTER_MAP,
+        start_time=epoch,
+        sample_interval_s=0.5,
+        point_count=4,
+    )
+
+    trajectory = service.raster_map(
+        SolarSystemBodyTarget(SolarSystemBody.MOON),
+        parameters,
+        RasterMapParameters(half_span_deg=0.3),
     )
 
     values = case["values"]

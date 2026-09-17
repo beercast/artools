@@ -176,7 +176,9 @@ class TrajectoryRequestParameters:
 
     ``point_count`` has mode-specific geometry semantics. For tracking it is the
     total number of output samples. For cross-scan mode it is the requested
-    number of samples per leg before legacy odd-count normalization.
+    number of samples per leg before legacy odd-count normalization. For raster
+    maps it is the requested number of samples per side before the same legacy
+    odd-count normalization; total output is the normalized side count squared.
     """
 
     target_family: TargetFamily
