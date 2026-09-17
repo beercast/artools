@@ -26,6 +26,10 @@ astronomy = [
     "astropy",
     "astroquery",
 ]
+satellite = [
+    "astropy",
+    "pycraf",
+]
 dev = [
     "pytest>=8",
     "numpy>=1.26",
