@@ -172,7 +172,12 @@ class Trajectory:
 
 @dataclass(frozen=True, slots=True)
 class TrajectoryRequestParameters:
-    """Validated parameters common to all target families and trajectory modes."""
+    """Validated parameters common to all target families and trajectory modes.
+
+    ``point_count`` has mode-specific geometry semantics. For tracking it is the
+    total number of output samples. For cross-scan mode it is the requested
+    number of samples per leg before legacy odd-count normalization.
+    """
 
     target_family: TargetFamily
     trajectory_mode: TrajectoryMode

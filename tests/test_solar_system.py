@@ -11,9 +11,11 @@ import pytest
 from artools import (
     AtmosphericParameters,
     AuxiliaryTelescopeTrajectoryWriter,
+    CrossScanParameters,
     HorizontalCoordinates,
     SRT_SITE,
     SolarSystemBody,
+    SolarSystemCrossScanService,
     SolarSystemBodyTarget,
     SolarSystemDependencyError,
     SolarSystemTrackingService,
@@ -112,6 +114,41 @@ def test_solar_system_tracking_matches_step1_mechanical_baseline() -> None:
     expected_file = (FIXTURE_DIR / case["file"]).read_text(encoding="ascii")
     assert AuxiliaryTelescopeTrajectoryWriter().serialize(trajectory) == expected_file
 
+
+
+
+def _planet_cross_scan_case() -> dict:
+    return next(case for case in MANIFEST["cases"] if case["name"] == "planet_cross_scan")
+
+
+def test_solar_system_cross_scan_matches_step1_mechanical_baseline() -> None:
+    case = _planet_cross_scan_case()
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    calculator = LegacyMechanicalSolarSystemCalculator(epoch)
+    service = SolarSystemCrossScanService(calculator=calculator)
+    parameters = TrajectoryRequestParameters(
+        target_family=TargetFamily.SOLAR_SYSTEM_BODY,
+        trajectory_mode=TrajectoryMode.CROSS_SCAN,
+        start_time=epoch,
+        sample_interval_s=0.5,
+        point_count=4,
+    )
+
+    trajectory = service.cross_scan(
+        SolarSystemBodyTarget(SolarSystemBody.MOON),
+        parameters,
+        CrossScanParameters(half_span_deg=0.3),
+    )
+
+    values = case["values"]
+    assert [point.azimuth_deg for point in trajectory] == pytest.approx(
+        values["azimuth_deg"]
+    )
+    assert [point.elevation_deg for point in trajectory] == pytest.approx(
+        values["elevation_deg"]
+    )
+    expected_file = (FIXTURE_DIR / case["file"]).read_text(encoding="ascii")
+    assert AuxiliaryTelescopeTrajectoryWriter().serialize(trajectory) == expected_file
 
 def test_solar_system_tracking_forwards_body_site_and_atmosphere() -> None:
     epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)

@@ -12,9 +12,11 @@ from artools import (
     AuxiliaryTelescopeTrajectoryWriter,
     CELESTRAK_GP_ENDPOINT,
     CelesTrakTleCatalog,
+    CrossScanParameters,
     HorizontalCoordinates,
     SRT_SITE,
     SatelliteAtmosphericProfile,
+    SatelliteCrossScanService,
     SatelliteDependencyError,
     SatelliteNotFoundError,
     SatellitePosition,
@@ -209,6 +211,47 @@ def test_satellite_tracking_matches_step1_mechanical_baseline() -> None:
     assert all(call[0] == _frozen_tle() for call in calculator.calls)
     assert all(call[2] == SRT_SITE for call in calculator.calls)
 
+
+
+
+def _satellite_cross_scan_case() -> dict:
+    return next(
+        case
+        for case in MANIFEST["cases"]
+        if case["family"] == "satellite" and case["mode"] == "cross_scan"
+    )
+
+
+def test_satellite_cross_scan_matches_step1_mechanical_baseline() -> None:
+    case = _satellite_cross_scan_case()
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    calculator = LegacyMechanicalSatelliteCalculator(epoch)
+    service = SatelliteCrossScanService(calculator=calculator)
+    parameters = TrajectoryRequestParameters(
+        target_family=TargetFamily.SATELLITE,
+        trajectory_mode=TrajectoryMode.CROSS_SCAN,
+        start_time=epoch,
+        sample_interval_s=0.5,
+        point_count=4,
+    )
+
+    trajectory = service.cross_scan(
+        SatelliteTarget(_frozen_tle()),
+        parameters,
+        CrossScanParameters(half_span_deg=0.3),
+    )
+
+    values = case["values"]
+    assert [point.azimuth_deg for point in trajectory] == pytest.approx(
+        values["azimuth_deg"]
+    )
+    assert [point.elevation_deg for point in trajectory] == pytest.approx(
+        values["elevation_deg"]
+    )
+    expected_file = (FIXTURE_DIR / case["file"]).read_text(encoding="ascii")
+    assert AuxiliaryTelescopeTrajectoryWriter().serialize(trajectory) == expected_file
+    assert all(call[0] == _frozen_tle() for call in calculator.calls)
+    assert all(call[2] == SRT_SITE for call in calculator.calls)
 
 def test_satellite_tracking_applies_legacy_refraction_by_subtraction() -> None:
     epoch = datetime(2026, 1, 1, tzinfo=UTC)

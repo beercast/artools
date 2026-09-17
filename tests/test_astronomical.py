@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import math
 import json
 from pathlib import Path
 
@@ -10,12 +11,14 @@ import pytest
 
 from artools import (
     AtmosphericParameters,
+    AstronomicalCrossScanService,
     AstronomicalSourceNotFoundError,
     AstronomicalSourceResolutionError,
     AstronomicalSourceTarget,
     AstronomicalTrackingService,
     AstronomyDependencyError,
     AuxiliaryTelescopeTrajectoryWriter,
+    CrossScanParameters,
     EquatorialCoordinates,
     HorizontalCoordinates,
     MappingAstronomicalSourceResolver,
@@ -123,6 +126,55 @@ def test_astronomical_tracking_matches_step1_mechanical_baseline() -> None:
     expected_file = (FIXTURE_DIR / case["file"]).read_text(encoding="ascii")
     assert AuxiliaryTelescopeTrajectoryWriter().serialize(trajectory) == expected_file
 
+
+
+
+def test_astronomical_cross_scan_explicitly_corrects_legacy_xscan_defect() -> None:
+    failure = MANIFEST["astronomical_cross_scan_failure"]
+    assert failure["exception"] == "NameError"
+    assert "k" in failure["message"]
+
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    coordinates = EquatorialCoordinates(
+        ra_deg=36.76708333333333, dec_deg=61.87277777777778
+    )
+    resolver = MappingAstronomicalSourceResolver({"W3(OH)": coordinates})
+    calculator = LegacyMechanicalAstronomicalCalculator(epoch)
+    service = AstronomicalCrossScanService(
+        resolver=resolver, calculator=calculator
+    )
+    parameters = TrajectoryRequestParameters(
+        target_family=TargetFamily.ASTRONOMICAL_SOURCE,
+        trajectory_mode=TrajectoryMode.CROSS_SCAN,
+        start_time=epoch,
+        sample_interval_s=0.5,
+        point_count=4,
+    )
+
+    trajectory = service.cross_scan(
+        AstronomicalSourceTarget("W3(OH)"),
+        parameters,
+        CrossScanParameters(half_span_deg=0.3),
+    )
+
+    points = list(trajectory)
+    assert len(points) == 10
+    base_azimuth = [150.125 + 0.010 * (index * 0.5) for index in range(10)]
+    base_elevation = [45.5 - 0.002 * (index * 0.5) for index in range(10)]
+    offsets = [-0.3, -0.15, 0.0, 0.15, 0.3]
+    expected_azimuth = base_azimuth.copy()
+    for index, offset in enumerate(offsets):
+        expected_azimuth[index] += offset / math.cos(
+            math.radians(base_elevation[index])
+        )
+    expected_elevation = base_elevation.copy()
+    for leg_index, offset in enumerate(reversed(offsets)):
+        expected_elevation[5 + leg_index] += offset
+
+    assert [point.azimuth_deg for point in points] == pytest.approx(expected_azimuth)
+    assert [point.elevation_deg for point in points] == pytest.approx(
+        expected_elevation
+    )
 
 def test_astronomical_tracking_resolves_once_and_forwards_site_and_atmosphere() -> None:
     epoch = datetime(2026, 8, 8, 8, 0, tzinfo=UTC)

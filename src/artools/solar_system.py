@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Protocol
 
 from .configuration import SRT_SITE
+from .cross_scan import CrossScanParameters, generate_cross_scan_trajectory
 from .domain import (
     AtmosphericParameters,
     HorizontalCoordinates,
@@ -155,6 +156,21 @@ class _SolarSystemPositionProvider:
         )
 
 
+def _create_solar_system_position_provider(
+    target: SolarSystemBodyTarget,
+    calculator: SolarSystemPositionCalculator,
+    site: ObserverSite,
+    atmosphere: AtmosphericParameters | None,
+) -> _SolarSystemPositionProvider:
+    """Bind one Solar System target to its position-calculation dependencies."""
+    return _SolarSystemPositionProvider(
+        body=target.body,
+        site=site,
+        atmosphere=atmosphere or AtmosphericParameters(),
+        calculator=calculator,
+    )
+
+
 class SolarSystemTrackingService:
     """Generate tracking trajectories for supported Solar System bodies."""
 
@@ -180,13 +196,42 @@ class SolarSystemTrackingService:
         if parameters.trajectory_mode is not TrajectoryMode.TRACKING:
             raise ValueError("Solar System tracking currently only supports TRACKING")
 
-        provider = _SolarSystemPositionProvider(
-            body=target.body,
-            site=self._site,
-            atmosphere=atmosphere or AtmosphericParameters(),
-            calculator=self._calculator,
+        provider = _create_solar_system_position_provider(
+            target, self._calculator, self._site, atmosphere
         )
         return generate_tracking_trajectory(parameters, provider)
+
+
+class SolarSystemCrossScanService:
+    """Generate cross scans for supported Solar System bodies."""
+
+    def __init__(
+        self,
+        calculator: SolarSystemPositionCalculator | None = None,
+        site: ObserverSite = SRT_SITE,
+    ) -> None:
+        self._calculator = calculator or AstropySolarSystemPositionCalculator()
+        self._site = site
+
+    def cross_scan(
+        self,
+        target: SolarSystemBodyTarget,
+        parameters: TrajectoryRequestParameters,
+        scan: CrossScanParameters | None = None,
+        atmosphere: AtmosphericParameters | None = None,
+    ) -> Trajectory:
+        """Generate a cross scan through the common target-independent strategy."""
+        if parameters.target_family is not TargetFamily.SOLAR_SYSTEM_BODY:
+            raise ValueError(
+                "Solar System cross scan requires target_family=SOLAR_SYSTEM_BODY"
+            )
+        if parameters.trajectory_mode is not TrajectoryMode.CROSS_SCAN:
+            raise ValueError("SolarSystemCrossScanService only supports CROSS_SCAN")
+
+        provider = _create_solar_system_position_provider(
+            target, self._calculator, self._site, atmosphere
+        )
+        return generate_cross_scan_trajectory(parameters, provider, scan)
 
 
 def create_default_solar_system_tracking_service() -> SolarSystemTrackingService:
@@ -194,13 +239,20 @@ def create_default_solar_system_tracking_service() -> SolarSystemTrackingService
     return SolarSystemTrackingService()
 
 
+def create_default_solar_system_cross_scan_service() -> SolarSystemCrossScanService:
+    """Create the normal Solar System cross-scan service using Astropy."""
+    return SolarSystemCrossScanService()
+
+
 __all__ = [
     "AstropySolarSystemPositionCalculator",
     "SolarSystemBody",
+    "SolarSystemCrossScanService",
     "SolarSystemBodyTarget",
     "SolarSystemDependencyError",
     "SolarSystemPositionCalculator",
     "SolarSystemTrackingService",
     "UnsupportedSolarSystemBodyError",
+    "create_default_solar_system_cross_scan_service",
     "create_default_solar_system_tracking_service",
 ]
