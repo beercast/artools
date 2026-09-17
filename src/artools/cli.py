@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 import sys
 from typing import Sequence
@@ -38,8 +38,8 @@ from .solar_system import (
     UnsupportedSolarSystemBodyError,
 )
 
+from .parsing import InputParseError, parse_utc_datetime as _parse_utc_datetime
 
-UTC = timezone.utc
 
 
 class CliError(ValueError):
@@ -211,22 +211,10 @@ def _add_half_span_argument(parser: argparse.ArgumentParser) -> None:
 
 def parse_utc_datetime(value: str) -> datetime:
     """Parse an ISO-8601 CLI timestamp and normalize it to UTC."""
-    if not isinstance(value, str):
-        raise TypeError("Timestamp must be a string")
-    text = value.strip()
-    if not text:
-        raise CliError("Start time must not be empty")
-    if text.endswith(("Z", "z")):
-        text = text[:-1] + "+00:00"
     try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError as error:
-        raise CliError(
-            f"Invalid start time {value!r}; expected an ISO-8601 timestamp"
-        ) from error
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+        return _parse_utc_datetime(value)
+    except InputParseError as error:
+        raise CliError(str(error)) from error
 
 
 def request_from_namespace(

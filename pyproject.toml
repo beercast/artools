@@ -23,6 +23,7 @@ dependencies = []
 
 [project.scripts]
 artools = "artools.cli:main"
+artools-gui = "artools.web_launcher:main"
 
 [project.optional-dependencies]
 astronomy = [
@@ -33,9 +34,19 @@ satellite = [
     "astropy",
     "pycraf",
 ]
+web = [
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+]
 dev = [
     "pytest>=8",
     "numpy>=1.26",
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+    "httpx",
+    "httpx2",
 ]
 
 [tool.setuptools]
@@ -48,3 +59,6 @@ where = ["src"]
 addopts = "-ra"
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.setuptools.package-data]
+artools = ["web_assets/*.css", "web_assets/*.js"]

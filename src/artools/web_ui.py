@@ -1,0 +1,220 @@
+"""HTML rendering helpers for the local ARTools web interface."""
+
+from __future__ import annotations
+
+from html import escape
+
+from .solar_system import SolarSystemBody
+
+
+HTMX_CDN = "https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js"
+HTMX_INTEGRITY = "sha384-H5SrcfygHmAuTDZphMHqBJLc3FhssKjG7w/CeCpFReSfwBWDTKpkzPP8c+cLsK+V"
+
+
+def render_index() -> str:
+    """Render the complete first-load page."""
+    return f'''<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ARTools</title>
+  <link rel="stylesheet" href="/static/artools.css">
+  <script async src="{HTMX_CDN}" integrity="{HTMX_INTEGRITY}" crossorigin="anonymous"></script>
+  <script defer src="/static/artools.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Sardinia Radio Telescope site</p>
+        <h1>ARTools</h1>
+        <p class="subtitle">Auxiliary Telescope trajectory generator</p>
+      </div>
+      <div class="status-chip"><span class="status-dot"></span>Local server</div>
+    </header>
+
+    <section class="panel">
+      <form id="trajectory-form" action="/generate" method="post" enctype="multipart/form-data" data-generate-form>
+        <div class="section-heading">
+          <div><span class="step">01</span><h2>Trajectory</h2></div>
+          <p>Choose the controlled system, target family, and trajectory mode.</p>
+        </div>
+
+        <div class="grid three">
+          <label>
+            <span>Controlled system</span>
+            <select name="controlled_system" id="controlled-system">
+              <option value="auxiliary_telescope">Auxiliary Telescope</option>
+            </select>
+          </label>
+          <label>
+            <span>Target family</span>
+            <select name="target_family" id="target-family"
+                    hx-get="/ui/fields" hx-target="#dynamic-fields"
+                    hx-include="#target-family,#trajectory-mode" hx-trigger="change">
+              <option value="astronomical">Astronomical source</option>
+              <option value="solar-system">Solar System body</option>
+              <option value="satellite">Artificial satellite</option>
+            </select>
+          </label>
+          <label>
+            <span>Mode</span>
+            <select name="mode" id="trajectory-mode"
+                    hx-get="/ui/fields" hx-target="#dynamic-fields"
+                    hx-include="#target-family,#trajectory-mode" hx-trigger="change">
+              <option value="track">Tracking</option>
+              <option value="cross-scan">Cross scan</option>
+              <option value="map">Raster map</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="section-heading compact">
+          <div><span class="step">02</span><h2>Parameters</h2></div>
+          <p>Times without an explicit offset are interpreted as UTC.</p>
+        </div>
+
+        <div class="grid three">
+          <label>
+            <span>Start time</span>
+            <input name="start" type="text" required placeholder="2026-08-31T22:30:00Z" autocomplete="off">
+          </label>
+          <label>
+            <span>Sample interval <small>s</small></span>
+            <input name="dt" type="number" required min="0.000001" step="any" value="1">
+          </label>
+          <label>
+            <span>Requested points</span>
+            <input name="points" type="number" required min="1" step="1" value="5">
+          </label>
+        </div>
+
+        <div id="dynamic-fields">
+          {render_dynamic_fields("astronomical", "track")}
+        </div>
+
+        <div class="section-heading compact">
+          <div><span class="step">03</span><h2>Output</h2></div>
+          <p>The trajectory is generated locally and downloaded by the browser.</p>
+        </div>
+        <div class="grid output-grid">
+          <label>
+            <span>Download filename</span>
+            <input name="output_name" type="text" value="trajectory.txt" required autocomplete="off">
+          </label>
+          <div class="action-wrap">
+            <button class="primary" type="submit" id="generate-button">
+              <span>Generate trajectory</span>
+              <span class="spinner" aria-hidden="true"></span>
+            </button>
+          </div>
+        </div>
+        <div id="generation-status" class="generation-status" role="status" aria-live="polite">
+          Ready.
+        </div>
+      </form>
+    </section>
+
+    <footer>
+      <span>Observer: SRT site</span>
+      <span>Output: Auxiliary Telescope legacy trajectory format</span>
+    </footer>
+  </main>
+</body>
+</html>'''
+
+
+def render_dynamic_fields(target_family: str, mode: str) -> str:
+    """Render target- and mode-specific form fields for HTMX replacement."""
+    family = target_family if target_family in {"astronomical", "solar-system", "satellite"} else "astronomical"
+    selected_mode = mode if mode in {"track", "cross-scan", "map"} else "track"
+
+    chunks: list[str] = ['<div class="dynamic-block">']
+    if family == "astronomical":
+        chunks.append('''
+          <div class="grid one target-grid">
+            <label><span>SIMBAD source name</span>
+              <input name="source" type="text" required placeholder="W3(OH)" autocomplete="off">
+            </label>
+          </div>''')
+        chunks.append(_atmosphere_fields())
+    elif family == "solar-system":
+        options = "".join(
+            f'<option value="{escape(body.value)}">{escape(body.value.title())}</option>'
+            for body in SolarSystemBody
+        )
+        chunks.append(f'''
+          <div class="grid one target-grid">
+            <label><span>Solar System body</span>
+              <select name="body">{options}</select>
+            </label>
+          </div>''')
+        chunks.append(_atmosphere_fields())
+    else:
+        chunks.append('''
+          <div class="target-grid">
+            <div class="field-label">Satellite TLE source</div>
+            <p class="hint">Provide exactly one: paste a named three-line TLE, upload a TLE file, or enter a CelesTrak satellite name.</p>
+            <div class="grid satellite-grid">
+              <label><span>Paste named TLE</span>
+                <textarea name="tle_text" rows="5" placeholder="SATELLITE NAME&#10;1 ...&#10;2 ..."></textarea>
+              </label>
+              <label><span>Upload TLE file</span>
+                <input name="tle_file" type="file" accept=".tle,.txt,text/plain">
+              </label>
+              <label><span>CelesTrak name</span>
+                <input name="catalog_name" type="text" placeholder="EUTELSAT HOTBIRD 13B" autocomplete="off">
+              </label>
+            </div>
+          </div>
+          <details class="advanced">
+            <summary>Satellite refraction</summary>
+            <div class="grid three detail-grid">
+              <label class="check-label">
+                <input name="refraction" type="checkbox" value="true">
+                <span>Enable legacy-compatible refraction</span>
+              </label>
+              <label><span>Frequency <small>GHz</small></span>
+                <input name="refraction_frequency_ghz" type="number" min="0.000001" step="any" value="22">
+              </label>
+              <label><span>Observer altitude <small>m</small></span>
+                <input name="refraction_altitude_m" type="number" min="0" step="any" value="650">
+              </label>
+            </div>
+          </details>''')
+
+    if selected_mode != "track":
+        chunks.append('''
+          <div class="grid one scan-grid">
+            <label><span>Half span <small>deg</small></span>
+              <input name="half_span_deg" type="number" step="any" value="2">
+            </label>
+          </div>''')
+
+    chunks.append("</div>")
+    return "".join(chunks)
+
+
+def _atmosphere_fields() -> str:
+    return '''
+      <details class="advanced">
+        <summary>Atmospheric parameters</summary>
+        <div class="grid four detail-grid">
+          <label><span>Pressure <small>hPa</small></span>
+            <input name="pressure_hpa" type="number" min="0" step="any" value="0">
+          </label>
+          <label><span>Temperature <small>deg C</small></span>
+            <input name="temperature_c" type="number" step="any" value="0">
+          </label>
+          <label><span>Relative humidity</span>
+            <input name="relative_humidity" type="number" min="0" step="any" value="0">
+          </label>
+          <label><span>Wavelength <small>m</small></span>
+            <input name="wavelength_m" type="number" min="0.000000001" step="any" value="0.013627">
+          </label>
+        </div>
+      </details>'''
+
+
+__all__ = ["HTMX_CDN", "render_dynamic_fields", "render_index"]
