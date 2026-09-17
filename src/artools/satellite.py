@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 from .configuration import SRT_SITE
+from .cross_scan import CrossScanParameters, generate_cross_scan_trajectory
 from .domain import (
     HorizontalCoordinates,
     ObserverSite,
@@ -284,6 +285,23 @@ class _SatellitePositionProvider:
         )
 
 
+def _create_satellite_position_provider(
+    target: SatelliteTarget,
+    calculator: SatellitePositionCalculator,
+    refraction_calculator: SatelliteRefractionCalculator,
+    site: ObserverSite,
+    refraction: SatelliteRefractionParameters | None,
+) -> _SatellitePositionProvider:
+    """Bind one satellite target to propagation and optional refraction."""
+    return _SatellitePositionProvider(
+        tle=target.tle,
+        site=site,
+        calculator=calculator,
+        refraction=refraction or SatelliteRefractionParameters(),
+        refraction_calculator=refraction_calculator,
+    )
+
+
 class SatelliteTrackingService:
     """Generate tracking trajectories from explicitly supplied TLE data."""
 
@@ -311,14 +329,52 @@ class SatelliteTrackingService:
         if parameters.trajectory_mode is not TrajectoryMode.TRACKING:
             raise ValueError("Satellite tracking currently only supports TRACKING")
 
-        provider = _SatellitePositionProvider(
-            tle=target.tle,
-            site=self._site,
-            calculator=self._calculator,
-            refraction=refraction or SatelliteRefractionParameters(),
-            refraction_calculator=self._refraction_calculator,
+        provider = _create_satellite_position_provider(
+            target,
+            self._calculator,
+            self._refraction_calculator,
+            self._site,
+            refraction,
         )
         return generate_tracking_trajectory(parameters, provider)
+
+
+class SatelliteCrossScanService:
+    """Generate cross scans from explicitly supplied TLE data."""
+
+    def __init__(
+        self,
+        calculator: SatellitePositionCalculator | None = None,
+        refraction_calculator: SatelliteRefractionCalculator | None = None,
+        site: ObserverSite = SRT_SITE,
+    ) -> None:
+        self._calculator = calculator or PycrafSatellitePositionCalculator()
+        self._refraction_calculator = (
+            refraction_calculator or PycrafSatelliteRefractionCalculator()
+        )
+        self._site = site
+
+    def cross_scan(
+        self,
+        target: SatelliteTarget,
+        parameters: TrajectoryRequestParameters,
+        scan: CrossScanParameters | None = None,
+        refraction: SatelliteRefractionParameters | None = None,
+    ) -> Trajectory:
+        """Generate a satellite cross scan without any catalog access."""
+        if parameters.target_family is not TargetFamily.SATELLITE:
+            raise ValueError("Satellite cross scan requires target_family=SATELLITE")
+        if parameters.trajectory_mode is not TrajectoryMode.CROSS_SCAN:
+            raise ValueError("SatelliteCrossScanService only supports CROSS_SCAN")
+
+        provider = _create_satellite_position_provider(
+            target,
+            self._calculator,
+            self._refraction_calculator,
+            self._site,
+            refraction,
+        )
+        return generate_cross_scan_trajectory(parameters, provider, scan)
 
 
 class TleCatalog(Protocol):
@@ -417,12 +473,18 @@ def create_default_satellite_tracking_service() -> SatelliteTrackingService:
     return SatelliteTrackingService()
 
 
+def create_default_satellite_cross_scan_service() -> SatelliteCrossScanService:
+    """Create the normal satellite cross-scan service using Pycraf."""
+    return SatelliteCrossScanService()
+
+
 __all__ = [
     "CELESTRAK_GP_ENDPOINT",
     "CelesTrakTleCatalog",
     "PycrafSatellitePositionCalculator",
     "PycrafSatelliteRefractionCalculator",
     "SatelliteAtmosphericProfile",
+    "SatelliteCrossScanService",
     "SatelliteDependencyError",
     "SatelliteNotFoundError",
     "SatellitePosition",
@@ -435,6 +497,7 @@ __all__ = [
     "TleCatalogError",
     "TleData",
     "TleFormatError",
+    "create_default_satellite_cross_scan_service",
     "create_default_satellite_tracking_service",
     "normalize_satellite_azimuth_deg",
     "parse_tle_catalog",

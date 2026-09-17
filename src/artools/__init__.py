@@ -3,6 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from .astronomical import (
+    AstronomicalCrossScanService,
     AstronomicalSourceNotFoundError,
     AstronomicalSourceResolutionError,
     AstronomicalTrackingService,
@@ -10,15 +11,22 @@ from .astronomical import (
     AstropyAstronomicalPositionCalculator,
     MappingAstronomicalSourceResolver,
     SimbadAstronomicalSourceResolver,
+    create_default_astronomical_cross_scan_service,
     create_default_astronomical_tracking_service,
 )
 from .auxiliary_telescope import AuxiliaryTelescopeTrajectoryWriter
+from .cross_scan import (
+    CrossScanParameters,
+    generate_cross_scan_trajectory,
+    normalize_cross_scan_point_count,
+)
 from .satellite import (
     CELESTRAK_GP_ENDPOINT,
     CelesTrakTleCatalog,
     PycrafSatellitePositionCalculator,
     PycrafSatelliteRefractionCalculator,
     SatelliteAtmosphericProfile,
+    SatelliteCrossScanService,
     SatelliteDependencyError,
     SatelliteNotFoundError,
     SatellitePosition,
@@ -28,6 +36,7 @@ from .satellite import (
     TleCatalogError,
     TleData,
     TleFormatError,
+    create_default_satellite_cross_scan_service,
     create_default_satellite_tracking_service,
     normalize_satellite_azimuth_deg,
     parse_tle_catalog,
@@ -35,10 +44,12 @@ from .satellite import (
 from .solar_system import (
     AstropySolarSystemPositionCalculator,
     SolarSystemBody,
+    SolarSystemCrossScanService,
     SolarSystemBodyTarget,
     SolarSystemDependencyError,
     SolarSystemTrackingService,
     UnsupportedSolarSystemBodyError,
+    create_default_solar_system_cross_scan_service,
     create_default_solar_system_tracking_service,
 )
 from .configuration import AUXILIARY_TELESCOPE, SRT_SITE
@@ -66,6 +77,7 @@ __all__ = [
     "AtmosphericParameters",
     "CELESTRAK_GP_ENDPOINT",
     "CelesTrakTleCatalog",
+    "AstronomicalCrossScanService",
     "AstronomicalSourceNotFoundError",
     "AstronomicalSourceResolutionError",
     "AstronomicalSourceTarget",
@@ -74,14 +86,17 @@ __all__ = [
     "AstropyAstronomicalPositionCalculator",
     "AstropySolarSystemPositionCalculator",
     "SolarSystemBody",
+    "SolarSystemCrossScanService",
     "SolarSystemBodyTarget",
     "SolarSystemDependencyError",
     "SolarSystemTrackingService",
     "UnsupportedSolarSystemBodyError",
+    "create_default_solar_system_cross_scan_service",
     "create_default_solar_system_tracking_service",
     "SRT_SITE",
     "AuxiliaryTelescopeTrajectoryWriter",
     "ControlledSystem",
+    "CrossScanParameters",
     "EquatorialCoordinates",
     "HorizontalCoordinates",
     "MappingAstronomicalSourceResolver",
@@ -89,6 +104,7 @@ __all__ = [
     "PycrafSatellitePositionCalculator",
     "PycrafSatelliteRefractionCalculator",
     "SatelliteAtmosphericProfile",
+    "SatelliteCrossScanService",
     "SatelliteDependencyError",
     "SatelliteNotFoundError",
     "SatellitePosition",
@@ -104,9 +120,13 @@ __all__ = [
     "TleCatalogError",
     "TleData",
     "TleFormatError",
+    "create_default_satellite_cross_scan_service",
     "create_default_satellite_tracking_service",
+    "generate_cross_scan_trajectory",
+    "normalize_cross_scan_point_count",
     "normalize_satellite_azimuth_deg",
     "parse_tle_catalog",
+    "create_default_astronomical_cross_scan_service",
     "create_default_astronomical_tracking_service",
     "__version__",
 ]

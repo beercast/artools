@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Callable, Mapping, Protocol
 
 from .configuration import SRT_SITE
+from .cross_scan import CrossScanParameters, generate_cross_scan_trajectory
 from .domain import (
     AtmosphericParameters,
     AstronomicalSourceTarget,
@@ -214,6 +215,23 @@ class _ResolvedAstronomicalPositionProvider:
         )
 
 
+def _create_astronomical_position_provider(
+    target: AstronomicalSourceTarget,
+    resolver: AstronomicalSourceResolver,
+    calculator: AstronomicalPositionCalculator,
+    site: ObserverSite,
+    atmosphere: AtmosphericParameters | None,
+) -> _ResolvedAstronomicalPositionProvider:
+    """Resolve one source and bind its horizontal-position dependencies."""
+    resolved = resolver.resolve(target)
+    return _ResolvedAstronomicalPositionProvider(
+        coordinates=resolved,
+        site=site,
+        atmosphere=atmosphere or AtmosphericParameters(),
+        calculator=calculator,
+    )
+
+
 class AstronomicalTrackingService:
     """Generate tracking trajectories for named astronomical sources."""
 
@@ -246,14 +264,54 @@ class AstronomicalTrackingService:
         if parameters.trajectory_mode is not TrajectoryMode.TRACKING:
             raise ValueError("AstronomicalTrackingService only supports TRACKING")
 
-        resolved = self._resolver.resolve(target)
-        provider = _ResolvedAstronomicalPositionProvider(
-            coordinates=resolved,
-            site=self._site,
-            atmosphere=atmosphere or AtmosphericParameters(),
-            calculator=self._calculator,
+        provider = _create_astronomical_position_provider(
+            target,
+            self._resolver,
+            self._calculator,
+            self._site,
+            atmosphere,
         )
         return generate_tracking_trajectory(parameters, provider)
+
+
+class AstronomicalCrossScanService:
+    """Generate corrected cross scans for named astronomical sources."""
+
+    def __init__(
+        self,
+        resolver: AstronomicalSourceResolver,
+        calculator: AstronomicalPositionCalculator | None = None,
+        site: ObserverSite = SRT_SITE,
+    ) -> None:
+        self._resolver = resolver
+        self._calculator = calculator or AstropyAstronomicalPositionCalculator()
+        self._site = site
+
+    def cross_scan(
+        self,
+        target: AstronomicalSourceTarget,
+        parameters: TrajectoryRequestParameters,
+        scan: CrossScanParameters | None = None,
+        atmosphere: AtmosphericParameters | None = None,
+    ) -> Trajectory:
+        """Generate a cross scan using the shared corrected scan strategy."""
+        if parameters.target_family is not TargetFamily.ASTRONOMICAL_SOURCE:
+            raise ValueError(
+                "Astronomical cross scan requires target_family=ASTRONOMICAL_SOURCE"
+            )
+        if parameters.trajectory_mode is not TrajectoryMode.CROSS_SCAN:
+            raise ValueError(
+                "AstronomicalCrossScanService only supports CROSS_SCAN"
+            )
+
+        provider = _create_astronomical_position_provider(
+            target,
+            self._resolver,
+            self._calculator,
+            self._site,
+            atmosphere,
+        )
+        return generate_cross_scan_trajectory(parameters, provider, scan)
 
 
 def create_default_astronomical_tracking_service() -> AstronomicalTrackingService:
@@ -261,7 +319,13 @@ def create_default_astronomical_tracking_service() -> AstronomicalTrackingServic
     return AstronomicalTrackingService(SimbadAstronomicalSourceResolver())
 
 
+def create_default_astronomical_cross_scan_service() -> AstronomicalCrossScanService:
+    """Create the normal astronomical cross-scan service using SIMBAD and Astropy."""
+    return AstronomicalCrossScanService(SimbadAstronomicalSourceResolver())
+
+
 __all__ = [
+    "AstronomicalCrossScanService",
     "AstronomicalPositionCalculator",
     "AstronomicalSourceNotFoundError",
     "AstronomicalSourceResolutionError",
@@ -271,5 +335,6 @@ __all__ = [
     "AstropyAstronomicalPositionCalculator",
     "MappingAstronomicalSourceResolver",
     "SimbadAstronomicalSourceResolver",
+    "create_default_astronomical_cross_scan_service",
     "create_default_astronomical_tracking_service",
 ]
