@@ -1,7 +1,8 @@
 # ARTools
 
 ARTools is a Python project for generating trajectory files used to move an
-Auxiliary Telescope located at the Sardinia Radio Telescope (SRT) site.
+auxiliary telescope (Reference Antenna) located at the Sardinia Radio Telescope
+(SRT) site.
 
 ## Installation
 
