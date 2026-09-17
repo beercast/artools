@@ -9,6 +9,7 @@ from typing import Protocol
 
 from .configuration import SRT_SITE
 from .cross_scan import CrossScanParameters, generate_cross_scan_trajectory
+from .raster_map import RasterMapParameters, generate_raster_map_trajectory
 from .domain import (
     AtmosphericParameters,
     HorizontalCoordinates,
@@ -234,6 +235,41 @@ class SolarSystemCrossScanService:
         return generate_cross_scan_trajectory(parameters, provider, scan)
 
 
+class SolarSystemRasterMapService:
+    """Generate raster maps for supported Solar System bodies."""
+
+    def __init__(
+        self,
+        calculator: SolarSystemPositionCalculator | None = None,
+        site: ObserverSite = SRT_SITE,
+    ) -> None:
+        self._calculator = calculator or AstropySolarSystemPositionCalculator()
+        self._site = site
+
+    def raster_map(
+        self,
+        target: SolarSystemBodyTarget,
+        parameters: TrajectoryRequestParameters,
+        raster: RasterMapParameters | None = None,
+        atmosphere: AtmosphericParameters | None = None,
+    ) -> Trajectory:
+        """Generate a raster map through the common target-independent strategy."""
+        if parameters.target_family is not TargetFamily.SOLAR_SYSTEM_BODY:
+            raise ValueError(
+                "Solar System raster map requires "
+                "target_family=SOLAR_SYSTEM_BODY"
+            )
+        if parameters.trajectory_mode is not TrajectoryMode.RASTER_MAP:
+            raise ValueError(
+                "SolarSystemRasterMapService only supports RASTER_MAP"
+            )
+
+        provider = _create_solar_system_position_provider(
+            target, self._calculator, self._site, atmosphere
+        )
+        return generate_raster_map_trajectory(parameters, provider, raster)
+
+
 def create_default_solar_system_tracking_service() -> SolarSystemTrackingService:
     """Create the normal Solar System tracking service using Astropy."""
     return SolarSystemTrackingService()
@@ -244,15 +280,22 @@ def create_default_solar_system_cross_scan_service() -> SolarSystemCrossScanServ
     return SolarSystemCrossScanService()
 
 
+def create_default_solar_system_raster_map_service() -> SolarSystemRasterMapService:
+    """Create the normal Solar System raster-map service using Astropy."""
+    return SolarSystemRasterMapService()
+
+
 __all__ = [
     "AstropySolarSystemPositionCalculator",
     "SolarSystemBody",
     "SolarSystemCrossScanService",
+    "SolarSystemRasterMapService",
     "SolarSystemBodyTarget",
     "SolarSystemDependencyError",
     "SolarSystemPositionCalculator",
     "SolarSystemTrackingService",
     "UnsupportedSolarSystemBodyError",
     "create_default_solar_system_cross_scan_service",
+    "create_default_solar_system_raster_map_service",
     "create_default_solar_system_tracking_service",
 ]

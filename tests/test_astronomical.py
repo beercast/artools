@@ -12,6 +12,7 @@ import pytest
 from artools import (
     AtmosphericParameters,
     AstronomicalCrossScanService,
+    AstronomicalRasterMapService,
     AstronomicalSourceNotFoundError,
     AstronomicalSourceResolutionError,
     AstronomicalSourceTarget,
@@ -22,6 +23,7 @@ from artools import (
     EquatorialCoordinates,
     HorizontalCoordinates,
     MappingAstronomicalSourceResolver,
+    RasterMapParameters,
     SRT_SITE,
     SimbadAstronomicalSourceResolver,
     TargetFamily,
@@ -128,6 +130,51 @@ def test_astronomical_tracking_matches_step1_mechanical_baseline() -> None:
 
 
 
+
+
+
+def _astronomical_raster_map_case() -> dict:
+    return next(
+        case
+        for case in MANIFEST["cases"]
+        if case["name"] == "astronomical_raster_map"
+    )
+
+
+def test_astronomical_raster_map_matches_step1_mechanical_baseline() -> None:
+    case = _astronomical_raster_map_case()
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    coordinates = EquatorialCoordinates(
+        ra_deg=36.76708333333333, dec_deg=61.87277777777778
+    )
+    resolver = MappingAstronomicalSourceResolver({"W3(OH)": coordinates})
+    calculator = LegacyMechanicalAstronomicalCalculator(epoch)
+    service = AstronomicalRasterMapService(
+        resolver=resolver, calculator=calculator
+    )
+    parameters = TrajectoryRequestParameters(
+        target_family=TargetFamily.ASTRONOMICAL_SOURCE,
+        trajectory_mode=TrajectoryMode.RASTER_MAP,
+        start_time=epoch,
+        sample_interval_s=0.5,
+        point_count=4,
+    )
+
+    trajectory = service.raster_map(
+        AstronomicalSourceTarget("W3(OH)"),
+        parameters,
+        RasterMapParameters(half_span_deg=0.3),
+    )
+
+    values = case["values"]
+    assert [point.azimuth_deg for point in trajectory] == pytest.approx(
+        values["azimuth_deg"]
+    )
+    assert [point.elevation_deg for point in trajectory] == pytest.approx(
+        values["elevation_deg"]
+    )
+    expected_file = (FIXTURE_DIR / case["file"]).read_text(encoding="ascii")
+    assert AuxiliaryTelescopeTrajectoryWriter().serialize(trajectory) == expected_file
 
 def test_astronomical_cross_scan_explicitly_corrects_legacy_xscan_defect() -> None:
     failure = MANIFEST["astronomical_cross_scan_failure"]

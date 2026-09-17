@@ -8,6 +8,7 @@ from typing import Callable, Mapping, Protocol
 
 from .configuration import SRT_SITE
 from .cross_scan import CrossScanParameters, generate_cross_scan_trajectory
+from .raster_map import RasterMapParameters, generate_raster_map_trajectory
 from .domain import (
     AtmosphericParameters,
     AstronomicalSourceTarget,
@@ -314,6 +315,47 @@ class AstronomicalCrossScanService:
         return generate_cross_scan_trajectory(parameters, provider, scan)
 
 
+class AstronomicalRasterMapService:
+    """Generate raster maps for named astronomical sources."""
+
+    def __init__(
+        self,
+        resolver: AstronomicalSourceResolver,
+        calculator: AstronomicalPositionCalculator | None = None,
+        site: ObserverSite = SRT_SITE,
+    ) -> None:
+        self._resolver = resolver
+        self._calculator = calculator or AstropyAstronomicalPositionCalculator()
+        self._site = site
+
+    def raster_map(
+        self,
+        target: AstronomicalSourceTarget,
+        parameters: TrajectoryRequestParameters,
+        raster: RasterMapParameters | None = None,
+        atmosphere: AtmosphericParameters | None = None,
+    ) -> Trajectory:
+        """Generate a raster map through the shared map strategy."""
+        if parameters.target_family is not TargetFamily.ASTRONOMICAL_SOURCE:
+            raise ValueError(
+                "Astronomical raster map requires "
+                "target_family=ASTRONOMICAL_SOURCE"
+            )
+        if parameters.trajectory_mode is not TrajectoryMode.RASTER_MAP:
+            raise ValueError(
+                "AstronomicalRasterMapService only supports RASTER_MAP"
+            )
+
+        provider = _create_astronomical_position_provider(
+            target,
+            self._resolver,
+            self._calculator,
+            self._site,
+            atmosphere,
+        )
+        return generate_raster_map_trajectory(parameters, provider, raster)
+
+
 def create_default_astronomical_tracking_service() -> AstronomicalTrackingService:
     """Create the normal astronomical tracking service using SIMBAD and Astropy."""
     return AstronomicalTrackingService(SimbadAstronomicalSourceResolver())
@@ -324,8 +366,14 @@ def create_default_astronomical_cross_scan_service() -> AstronomicalCrossScanSer
     return AstronomicalCrossScanService(SimbadAstronomicalSourceResolver())
 
 
+def create_default_astronomical_raster_map_service() -> AstronomicalRasterMapService:
+    """Create the normal astronomical raster-map service using SIMBAD and Astropy."""
+    return AstronomicalRasterMapService(SimbadAstronomicalSourceResolver())
+
+
 __all__ = [
     "AstronomicalCrossScanService",
+    "AstronomicalRasterMapService",
     "AstronomicalPositionCalculator",
     "AstronomicalSourceNotFoundError",
     "AstronomicalSourceResolutionError",
@@ -336,5 +384,6 @@ __all__ = [
     "MappingAstronomicalSourceResolver",
     "SimbadAstronomicalSourceResolver",
     "create_default_astronomical_cross_scan_service",
+    "create_default_astronomical_raster_map_service",
     "create_default_astronomical_tracking_service",
 ]
