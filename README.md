@@ -1,8 +1,8 @@
 # ARTools
 
 ARTools is a Python project for generating trajectory files used to move an
-auxiliary reference telescope (ART) located at the Sardinia Radio Telescope (SRT) site.
-The ART is used as a reference for SRT calibrations.
+auxiliary reference telescope (ART) located at the Sardinia Radio Telescope
+(SRT) site. The ART is used as a reference for SRT calibrations.
 
 
 ## Scope
@@ -19,46 +19,53 @@ For each target family, the intended trajectory modes are:
 - cross scan;
 - raster map.
 
-The ART is located at the SRT site, so the SRT site coordinates
-are used as observer location for azimuth/elevation calculations.
-
-
-## Legacy compatibility
-
-The new implementation is derived from the legacy `artools.py` module and its
-Jupyter notebook examples. The relevant legacy sources are preserved under
-`legacy/original/` as reference material only. They are not installed as part of
-the Python package.
-
-Before replacing the legacy calculations, deterministic reference outputs are
-produced from the old implementation. Permanent regression tests verify that the
-new implementation preserves the intended legacy behavior for equivalent inputs.
-Differences caused by known legacy defects must be documented and changed only
-through an explicit project decision.
+The SRT site coordinates are used as observer location for
+azimuth/elevation calculations (the ART is located at the SRT site).
 
 
 ## Installation
 
-For a complete editable development installation use the cross-platform
-bootstrap script:
+ARTools requires Python 3.11 or newer. Python itself must already be installed;
+the ARTools installer handles the project environment and package dependencies.
+
+From the project directory run:
 
 ```bash
 python install.py
 ```
 
-The script is only a shortcut for:
+Finally, to launch ARTools:
+
+Linux/macOS:
 
 ```bash
-python -m pip install -e '.[web,astronomy,satellite,dev]'
+./artools --help  # command line
+./artools-gui     # graphical user interface
 ```
 
-Launch it with:
+Windows:
+
+```text
+artools.cmd --help
+artools-gui.cmd
+```
+
+### Installation details
+
+The installation script creates a virtual environment. To discard the existing
+environment and perform a clean reinstall:
 
 ```bash
-artools-gui
+python install.py --recreate
 ```
 
-Tests:
+For development, including test dependencies and an editable package install:
+
+```bash
+python install.py --dev
+```
+
+After activating the development environment, tests can be run with:
 
 ```bash
 pytest
@@ -66,31 +73,31 @@ pytest
 
 ## Command-line interface
 
-The CLI is installed as `artools` and is also available through
-`python -m artools`. Its command shape is:
+The command-line interface is available through the local `artools` launcher.
+Its command shape is:
 
 ```text
-artools astronomical {track,cross-scan,map} ...
-artools solar-system {track,cross-scan,map} ...
-artools satellite {track,cross-scan,map} ...
+./artools astronomical {track,cross-scan,map} ...
+./artools solar-system {track,cross-scan,map} ...
+./artools satellite {track,cross-scan,map} ...
 ```
 
 For example:
 
 ```bash
-artools astronomical track "W3(OH)" \
+./artools astronomical track "W3(OH)" \
     --start 2026-08-31T22:30:00Z --dt 0.5 --points 5 \
     --output w3oh-track.txt
 
-artools solar-system cross-scan moon \
+./artools solar-system cross-scan moon \
     --start 2026-08-31T22:30:00Z --dt 0.5 --points 10 \
     --half-span-deg 0.5 --output moon-cross.txt
 
-artools solar-system map saturn \
+./artools solar-system map saturn \
     --start 2026-08-31T22:30:00Z --dt 0.5 --points 25 \
     --half-span-deg 0.4 --output saturn-map.txt
 
-artools satellite track --tle-file hotbird.tle \
+./artools satellite track --tle-file hotbird.tle \
     --start 2026-08-31T12:11:00Z --dt 600 --points 144 \
     --refraction --output hotbird-track.txt
 ```
@@ -103,3 +110,11 @@ Satellite commands accept either `--tle-file` for deterministic offline
 operation or `--catalog-name` for a live CelesTrak lookup. Astronomical commands
 use SIMBAD through the default application service. See [docs/cli.md](docs/cli.md)
 for all nine target-family/trajectory-mode examples and option details.
+
+
+## Legacy compatibility
+
+The new implementation is derived from the legacy `artools.py` module and its
+Jupyter notebook examples. The relevant legacy sources are preserved under
+`legacy/original/` as reference material only. They are not installed as part of
+the Python package.
