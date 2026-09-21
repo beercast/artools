@@ -8,3 +8,8 @@ build/
 __pycache__
 TODO.txt
 *egg-info*
+.venv/
+/artools
+/artools-gui
+/artools.cmd
+/artools-gui.cmd
