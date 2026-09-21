@@ -26,6 +26,8 @@ from artools import (
     RasterMapParameters,
     SRT_SITE,
     SimbadAstronomicalSourceResolver,
+    SimbadSourceCatalog,
+    SimbadSourceCatalogError,
     TargetFamily,
     TrajectoryMode,
     TrajectoryRequestParameters,
@@ -102,6 +104,104 @@ def test_simbad_resolver_reports_not_found_and_query_failures() -> None:
     failing = SimbadAstronomicalSourceResolver(query_object=failing_query)
     with pytest.raises(AstronomicalSourceResolutionError, match="SIMBAD query failed"):
         failing.resolve(AstronomicalSourceTarget("3C84"))
+
+
+
+def test_simbad_catalog_search_is_bounded_case_insensitive_and_deduplicated() -> None:
+    queries: list[str] = []
+
+    class Result:
+        colnames = ("matched_id", "main_id")
+
+        def __len__(self) -> int:
+            return 3
+
+        def __getitem__(self, key: str):
+            return {
+                "matched_id": ["W3(OH)", "W3 Main", "W3(OH)"],
+                "main_id": ["W3(OH)", "W3 Main", "W3(OH)"],
+            }[key]
+
+    def query_tap(query: str):
+        queries.append(query)
+        return Result()
+
+    catalog = SimbadSourceCatalog(query_tap=query_tap)
+
+    assert catalog.search("W") == ()
+    matches = catalog.search("w3", limit=20)
+
+    assert [(item.matched_id, item.main_id) for item in matches] == [
+        ("W3(OH)", "W3(OH)"),
+        ("W3 Main", "W3 Main"),
+    ]
+    assert len(queries) == 1
+    assert "SELECT TOP 20 ident.id AS matched_id, basic.main_id" in queries[0]
+    assert "REGEXP(LOWERCASE(ident.id), '^w[ ]*3') = 1" in queries[0]
+    assert "ORDER BY matched_id" in queries[0]
+    assert "ORDER BY ident.id" not in queries[0]
+
+
+def test_simbad_catalog_autocomplete_ignores_identifier_whitespace() -> None:
+    queries: list[str] = []
+
+    class Result:
+        colnames = ("matched_id", "main_id")
+
+        def __len__(self) -> int:
+            return 1
+
+        def __getitem__(self, key: str):
+            return {
+                "matched_id": ["W 3(OH)"],
+                "main_id": ["W 3(OH)"],
+            }[key]
+
+    catalog = SimbadSourceCatalog(query_tap=lambda query: queries.append(query) or Result())
+
+    matches = catalog.search("W3(")
+
+    assert [(item.matched_id, item.main_id) for item in matches] == [("W 3(OH)", "W 3(OH)")]
+    assert "REGEXP(LOWERCASE(ident.id), '^w[ ]*3[ ]*\\(') = 1" in queries[0]
+
+
+def test_simbad_catalog_verifies_name_and_returns_main_identifier() -> None:
+    class Result:
+        colnames = ("main_id", "ra", "dec")
+
+        def __len__(self) -> int:
+            return 1
+
+        def __getitem__(self, key: str):
+            return {
+                "main_id": ["W3(OH)"],
+                "ra": [0.0],
+                "dec": [0.0],
+            }[key]
+
+    catalog = SimbadSourceCatalog(query_object=lambda name: Result())
+    verified = catalog.verify("W3 OH")
+
+    assert verified.matched_id == "W3 OH"
+    assert verified.main_id == "W3(OH)"
+
+
+def test_simbad_catalog_reports_remote_and_malformed_results() -> None:
+    def failing_query(query: str):
+        raise OSError("network unavailable")
+
+    with pytest.raises(SimbadSourceCatalogError, match="autocomplete query failed"):
+        SimbadSourceCatalog(query_tap=failing_query).search("W3")
+
+    class InvalidResult:
+        colnames = ("wrong",)
+
+        def __len__(self) -> int:
+            return 1
+
+    with pytest.raises(SimbadSourceCatalogError, match="identifier columns"):
+        SimbadSourceCatalog(query_tap=lambda query: InvalidResult()).search("W3")
+
 
 def test_astronomical_tracking_matches_step1_mechanical_baseline() -> None:
     case = _astronomical_tracking_case()

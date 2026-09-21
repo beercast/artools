@@ -140,11 +140,31 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
     chunks: list[str] = ['<div class="dynamic-block">']
     if family == "astronomical":
         chunks.append('''
-          <div class="grid one target-grid">
-            <label><span>SIMBAD source name</span>
-              <input name="source" type="text" required placeholder="W3(OH)" autocomplete="off">
+          <div class="astronomical-source-grid target-grid">
+            <div class="source-search-field">
+              <span class="field-label">SIMBAD source name</span>
+              <div class="source-input-row">
+                <div class="source-autocomplete">
+                  <input name="source" id="simbad-source-input" type="text" required
+                    placeholder="W3(OH)" autocomplete="off" aria-autocomplete="list"
+                    aria-controls="simbad-suggestions" aria-expanded="false">
+                  <input name="source_canonical" id="simbad-source-canonical" type="hidden" value="">
+                  <div id="simbad-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
+                </div>
+                <button class="favorite-toggle" type="button" id="simbad-favorite-toggle"
+                  aria-label="Add source to favorites" title="Add source to favorites" disabled>
+                  <span aria-hidden="true">☆</span>
+                </button>
+              </div>
+              <div id="simbad-source-status" class="source-message" role="status" aria-live="polite"></div>
+            </div>
+            <label><span>Favorites</span>
+              <select id="simbad-favorites-select">
+                <option value="">No favorites saved</option>
+              </select>
             </label>
-          </div>''')
+          </div>
+          <p class="hint source-hint">Type at least two characters to search SIMBAD.</p>''')
         chunks.append(_atmosphere_fields())
     elif family == "solar-system":
         options = "".join(

@@ -75,6 +75,65 @@ input:focus, select:focus, textarea:focus { border-color: #6ba9bd; background: w
 .target-grid, .scan-grid { margin-top: 3px; }
 .hint { margin: 5px 0 13px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
+.astronomical-source-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 16px; align-items: start; }
+.source-search-field { min-width: 0; display: grid; gap: 7px; }
+.source-input-row { display: grid; grid-template-columns: minmax(0, 1fr) 43px; gap: 8px; align-items: start; }
+.source-autocomplete { position: relative; min-width: 0; }
+.favorite-toggle {
+  width: 43px;
+  min-height: 43px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfc;
+  color: #8a969d;
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.favorite-toggle:hover:not(:disabled) { border-color: #9dbbc6; background: var(--accent-soft); color: var(--accent-dark); }
+.favorite-toggle.is-favorite { color: #b57600; background: #fff8e6; border-color: #e4c675; }
+.favorite-toggle:disabled { cursor: default; opacity: .45; }
+.favorite-toggle:focus-visible { outline: 3px solid rgba(23,107,135,.15); outline-offset: 2px; }
+.autocomplete-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 12px 30px rgba(26, 50, 63, .13);
+}
+.autocomplete-option {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #edf1f3;
+  background: white;
+  color: var(--ink);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.autocomplete-option:last-child { border-bottom: 0; }
+.autocomplete-option:hover, .autocomplete-option:focus-visible { background: var(--accent-soft); outline: none; }
+.autocomplete-names { min-width: 0; display: grid; gap: 2px; }
+.autocomplete-names strong { font-size: 13px; font-weight: 700; }
+.autocomplete-names small { color: var(--muted); font-size: 11px; font-weight: 500; }
+.favorite-marker { flex: 0 0 auto; color: #b57600; font-size: 14px; }
+.autocomplete-empty { padding: 10px 12px; color: var(--muted); font-size: 12px; }
+.source-message { min-height: 16px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.source-message.success { color: var(--success); }
+.source-message.error { color: var(--danger); }
+.source-hint { margin-top: 6px; }
+
 .advanced { margin-top: 15px; border: 1px solid var(--line); border-radius: 11px; background: #fafbfb; }
 .advanced summary { cursor: pointer; padding: 12px 14px; color: var(--ink); font-size: 13px; font-weight: 700; user-select: none; }
 .detail-grid { border-top: 1px solid var(--line); padding: 15px; }
@@ -129,7 +188,7 @@ footer { display: flex; justify-content: space-between; gap: 18px; color: #7a899
   .shell { padding-top: 28px; }
   .panel { padding: 22px; }
   .hero { align-items: flex-start; }
-  .grid.three, .grid.four, .satellite-grid { grid-template-columns: 1fr; }
+  .grid.three, .grid.four, .satellite-grid, .astronomical-source-grid { grid-template-columns: 1fr; }
   .start-time-controls { grid-template-columns: 1fr 1fr; }
   .start-time-controls .utc-now-button { grid-column: 1 / -1; justify-self: start; }
   .section-heading { align-items: flex-start; flex-direction: column; gap: 6px; }

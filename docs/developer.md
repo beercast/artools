@@ -82,7 +82,7 @@ The CLI and web interface are presentation layers only. They both construct a
 | `tracking.py` | Generic tracking time sampling. |
 | `cross_scan.py` | Generic two-leg cross-scan geometry. |
 | `raster_map.py` | Generic square serpentine raster-map geometry. |
-| `astronomical.py` | SIMBAD source resolution, Astropy coordinate conversion, and astronomical family services. |
+| `astronomical.py` | SIMBAD source resolution/autocomplete, Astropy coordinate conversion, and astronomical family services. |
 | `solar_system.py` | Supported Solar System targets, Astropy body positions, and Solar System family services. |
 | `satellite.py` | TLE handling, Pycraf propagation/refraction, CelesTrak adapter, and satellite family services. |
 | `application.py` | High-level request validation, target/mode dispatch, file-generation workflow, and TLE convenience methods. |
@@ -92,6 +92,7 @@ The CLI and web interface are presentation layers only. They both construct a
 | `web_ui.py` | Server-rendered HTML for the browser interface. |
 | `web_assets/` | Local CSS and JavaScript used by the browser interface. |
 | `web_launcher.py` | Local Uvicorn server/browser launcher. |
+| `preferences.py` | Persistent per-user SIMBAD source favorites and platform-specific preferences path. |
 
 ## Where to change trajectory behavior
 
@@ -169,8 +170,16 @@ Use `src/artools/astronomical.py`.
 Important components:
 
 - `SimbadAstronomicalSourceResolver`: converts a source name into equatorial coordinates;
+- `SimbadSourceCatalog`: performs bounded SIMBAD autocomplete and verifies names before they are saved as favorites;
 - `AstropyAstronomicalPositionCalculator`: converts those coordinates into azimuth/elevation at the SRT site;
 - `AstronomicalTrackingService`, `AstronomicalCrossScanService`, `AstronomicalRasterMapService`: bind the astronomical provider to the generic strategies.
+
+SIMBAD favorites are a presentation/user-preference concern rather than trajectory
+state. `SourceFavoritesStore` in `preferences.py` persists canonical SIMBAD main
+identifiers locally. The web layer hides a leading `NAME ` prefix only for display
+and keeps the canonical value for source resolution. Search results are never
+filtered by the favorites list. Autocomplete uses a whitespace-tolerant TAP
+regular expression so compact identifiers can match SIMBAD's stored spacing.
 
 ### Solar System bodies
 
@@ -232,7 +241,10 @@ src/artools/web_assets/
 ```
 
 `webapp.py` converts HTTP/form values into the same application request used by
-the CLI. `web_ui.py` and `web_assets/` control presentation and browser behavior.
+the CLI and exposes the SIMBAD autocomplete/favorites endpoints. `web_ui.py` and
+`web_assets/` control presentation and browser behavior. The autocomplete uses a
+remote bounded SIMBAD query; favorites are stored locally through
+`preferences.py`.
 
 ## Legacy notebook mapping
 

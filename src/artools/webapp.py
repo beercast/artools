@@ -17,6 +17,8 @@ from .astronomical import (
     AstronomicalSourceNotFoundError,
     AstronomicalSourceResolutionError,
     AstronomyDependencyError,
+    SimbadSourceCatalog,
+    SimbadSourceCatalogError,
 )
 from .auxiliary_telescope import AuxiliaryTelescopeTrajectoryWriter
 from .domain import (
@@ -27,6 +29,7 @@ from .domain import (
     TrajectoryRequestParameters,
 )
 from .parsing import InputParseError, parse_utc_datetime
+from .preferences import PreferencesError, SourceFavoritesStore
 from .satellite import (
     SatelliteDependencyError,
     SatelliteNotFoundError,
@@ -61,6 +64,8 @@ def create_app(
     application: TrajectoryApplicationService | None = None,
     *,
     writer: AuxiliaryTelescopeTrajectoryWriter | None = None,
+    simbad_catalog: SimbadSourceCatalog | None = None,
+    favorites: SourceFavoritesStore | None = None,
 ) -> FastAPI:
     """Create the local ARTools FastAPI application.
 
@@ -71,6 +76,8 @@ def create_app(
     """
     service = application or TrajectoryApplicationService()
     trajectory_writer = writer or AuxiliaryTelescopeTrajectoryWriter()
+    source_catalog = simbad_catalog or SimbadSourceCatalog()
+    favorites_store = favorites or SourceFavoritesStore()
     app = FastAPI(title="ARTools", docs_url=None, redoc_url=None)
     assets = Path(__file__).with_name("web_assets")
     app.mount("/static", StaticFiles(directory=assets), name="static")
@@ -82,6 +89,74 @@ def create_app(
     @app.get("/ui/fields", response_class=HTMLResponse)
     def fields(target_family: str = "astronomical", mode: str = "track") -> HTMLResponse:
         return HTMLResponse(render_dynamic_fields(target_family, mode))
+
+    @app.get("/api/simbad/suggestions")
+    async def simbad_suggestions(q: str = "") -> JSONResponse:
+        query = q.strip()
+        if len(query) < 2:
+            return JSONResponse({"suggestions": []})
+        try:
+            matches = await run_in_threadpool(source_catalog.search, query, 20)
+            favorite_names = {_favorite_key(name) for name in favorites_store.list()}
+        except (AstronomyDependencyError, SimbadSourceCatalogError) as error:
+            return JSONResponse({"detail": str(error)}, status_code=502)
+        except PreferencesError as error:
+            return JSONResponse({"detail": str(error)}, status_code=500)
+
+        return JSONResponse(
+            {
+                "suggestions": [
+                    {
+                        "name": match.matched_id,
+                        "main_id": match.main_id,
+                        "favorite": _favorite_key(match.main_id) in favorite_names,
+                    }
+                    for match in matches
+                ]
+            }
+        )
+
+    @app.get("/api/simbad/favorites")
+    def simbad_favorites() -> JSONResponse:
+        try:
+            return JSONResponse({"favorites": list(favorites_store.list())})
+        except PreferencesError as error:
+            return JSONResponse({"detail": str(error)}, status_code=500)
+
+    @app.post("/api/simbad/favorites")
+    async def add_simbad_favorite(request: Request) -> JSONResponse:
+        try:
+            payload = await request.json()
+        except Exception:
+            return JSONResponse({"detail": "Invalid favorite request"}, status_code=400)
+        name = str(payload.get("name", "")).strip() if isinstance(payload, dict) else ""
+        if not name:
+            return JSONResponse({"detail": "SIMBAD source name is required"}, status_code=400)
+        try:
+            verified = await run_in_threadpool(source_catalog.verify, name)
+            updated = favorites_store.add(verified.main_id)
+        except AstronomicalSourceNotFoundError as error:
+            return JSONResponse({"detail": str(error)}, status_code=404)
+        except (AstronomyDependencyError, SimbadSourceCatalogError) as error:
+            return JSONResponse({"detail": str(error)}, status_code=502)
+        except (PreferencesError, ValueError) as error:
+            return JSONResponse({"detail": str(error)}, status_code=400)
+        return JSONResponse(
+            {
+                "favorite": verified.main_id,
+                "favorites": list(updated),
+            }
+        )
+
+    @app.delete("/api/simbad/favorites")
+    def remove_simbad_favorite(name: str = "") -> JSONResponse:
+        if not name.strip():
+            return JSONResponse({"detail": "SIMBAD source name is required"}, status_code=400)
+        try:
+            updated = favorites_store.remove(name)
+        except (PreferencesError, ValueError) as error:
+            return JSONResponse({"detail": str(error)}, status_code=400)
+        return JSONResponse({"favorites": list(updated)})
 
     @app.post("/generate")
     async def generate(request: Request) -> Response:
@@ -163,8 +238,11 @@ def request_from_web_form(
     )
 
     if family is TargetFamily.ASTRONOMICAL_SOURCE:
+        source_name = values.get("source_canonical", "").strip() or _required(
+            values, "source", "SIMBAD source name"
+        )
         return TrajectoryGenerationRequest(
-            target=AstronomicalSourceTarget(_required(values, "source", "SIMBAD source name")),
+            target=AstronomicalSourceTarget(source_name),
             parameters=parameters,
             half_span_deg=half_span,
             atmosphere=_atmosphere(values),
@@ -202,6 +280,13 @@ def request_from_web_form(
         ),
     )
 
+
+
+def _favorite_key(name: str) -> str:
+    value = name.strip()
+    if value.casefold().startswith("name "):
+        value = value[5:].lstrip()
+    return value.casefold()
 
 
 def _web_start_time(values: Mapping[str, str]) -> str:
@@ -332,6 +417,7 @@ _USER_FACING_ERRORS = (
     AstronomyDependencyError,
     AstronomicalSourceNotFoundError,
     AstronomicalSourceResolutionError,
+    SimbadSourceCatalogError,
     SolarSystemDependencyError,
     UnsupportedSolarSystemBodyError,
     SatelliteDependencyError,

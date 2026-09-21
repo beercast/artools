@@ -35,6 +35,106 @@ class AstronomicalSourceResolutionError(RuntimeError):
     """Raised when an astronomical source resolver fails unexpectedly."""
 
 
+
+
+class SimbadSourceCatalogError(RuntimeError):
+    """Raised when SIMBAD autocomplete/verification cannot be completed."""
+
+
+@dataclass(frozen=True, slots=True)
+class SimbadSourceSuggestion:
+    """One SIMBAD identifier match returned by autocomplete."""
+
+    matched_id: str
+    main_id: str
+
+
+class SimbadSourceCatalog:
+    """Search and verify SIMBAD source names for user-interface assistance.
+
+    The adapter is intentionally separate from trajectory generation. Search
+    uses SIMBAD TAP and exact verification uses the normal object resolver.
+    Query callables are injectable so tests never require live network access.
+    """
+
+    def __init__(
+        self,
+        query_tap: Callable[[str], object] | None = None,
+        query_object: Callable[[str], object] | None = None,
+    ) -> None:
+        self._query_tap = query_tap
+        self._query_object = query_object
+
+    def search(self, prefix: str, limit: int = 20) -> tuple[SimbadSourceSuggestion, ...]:
+        """Return identifier matches beginning with ``prefix``.
+
+        Search is case-insensitive and bounded. Empty/one-character prefixes are
+        deliberately ignored to avoid overly broad remote SIMBAD requests.
+        """
+        value = prefix.strip()
+        if len(value) < 2:
+            return ()
+        if limit < 1 or limit > 100:
+            raise ValueError("SIMBAD result limit must be between 1 and 100")
+
+        query_tap = self._query_tap or self._load_query_tap()
+        pattern = _simbad_flexible_prefix_regexp(value)
+        escaped_pattern = pattern.replace("'", "''")
+        query = (
+            f"SELECT TOP {limit} ident.id AS matched_id, basic.main_id "
+            "FROM basic JOIN ident ON basic.oid = ident.oidref "
+            f"WHERE REGEXP(LOWERCASE(ident.id), '{escaped_pattern}') = 1 "
+            "ORDER BY matched_id"
+        )
+        try:
+            result = query_tap(query)
+        except Exception as error:
+            raise SimbadSourceCatalogError("SIMBAD autocomplete query failed") from error
+
+        if result is None:
+            return ()
+        return _suggestions_from_simbad_result(result, limit)
+
+    def verify(self, name: str) -> SimbadSourceSuggestion:
+        """Verify one source name and return its canonical SIMBAD main id."""
+        value = name.strip()
+        if not value:
+            raise AstronomicalSourceNotFoundError("Astronomical source name is required")
+        query_object = self._query_object or self._load_query_object()
+        try:
+            result = query_object(value)
+        except Exception as error:
+            raise SimbadSourceCatalogError(
+                f"SIMBAD verification failed for astronomical source: {value}"
+            ) from error
+        if result is None or len(result) == 0:
+            raise AstronomicalSourceNotFoundError(
+                f"Astronomical source not found: {value}"
+            )
+        main_id = _main_id_from_simbad_result(result)
+        return SimbadSourceSuggestion(matched_id=value, main_id=main_id)
+
+    @staticmethod
+    def _load_query_tap() -> Callable[[str], object]:
+        try:
+            from astroquery.simbad import Simbad
+        except ImportError as error:
+            raise AstronomyDependencyError(
+                "SIMBAD autocomplete requires the 'astronomy' optional dependencies"
+            ) from error
+        return Simbad.query_tap
+
+    @staticmethod
+    def _load_query_object() -> Callable[[str], object]:
+        try:
+            from astroquery.simbad import Simbad
+        except ImportError as error:
+            raise AstronomyDependencyError(
+                "SIMBAD source verification requires the 'astronomy' optional dependencies"
+            ) from error
+        return Simbad.query_object
+
+
 class AstronomicalSourceResolver(Protocol):
     """Resolve a named astronomical source to fixed equatorial coordinates."""
 
@@ -106,6 +206,99 @@ class SimbadAstronomicalSourceResolver:
                 "SIMBAD source resolution requires the 'astronomy' optional dependencies"
             ) from error
         return Simbad.query_object
+
+
+
+def _simbad_flexible_prefix_regexp(prefix: str) -> str:
+    """Return a SIMBAD regexp prefix that ignores identifier whitespace.
+
+    SIMBAD's normal identifier resolver accepts common compact spellings such
+    as ``W3(OH)`` even when an identifier is stored as ``W 3(OH)``. TAP
+    identifier rows preserve that spacing, so autocomplete must make whitespace
+    optional explicitly. Only whitespace is relaxed; every other character is
+    matched literally.
+    """
+    compact = "".join(character for character in prefix.casefold() if not character.isspace())
+    escaped_characters = [_escape_simbad_regexp_character(character) for character in compact]
+    return "^" + "[ ]*".join(escaped_characters)
+
+
+def _escape_simbad_regexp_character(character: str) -> str:
+    if character in r"\.^$|?*+()[]{}":
+        return "\\" + character
+    return character
+
+
+def _suggestions_from_simbad_result(
+    result: object, limit: int
+) -> tuple[SimbadSourceSuggestion, ...]:
+    column_names = tuple(getattr(result, "colnames", ()))
+    id_column = (
+        "matched_id"
+        if "matched_id" in column_names
+        else "MATCHED_ID"
+        if "MATCHED_ID" in column_names
+        else "id"
+        if "id" in column_names
+        else "ID"
+        if "ID" in column_names
+        else None
+    )
+    main_column = (
+        "main_id"
+        if "main_id" in column_names
+        else "MAIN_ID"
+        if "MAIN_ID" in column_names
+        else None
+    )
+    if id_column is None or main_column is None:
+        raise SimbadSourceCatalogError(
+            "SIMBAD autocomplete response is missing identifier columns"
+        )
+
+    suggestions: list[SimbadSourceSuggestion] = []
+    seen: set[tuple[str, str]] = set()
+    try:
+        row_count = len(result)
+    except TypeError as error:
+        raise SimbadSourceCatalogError("SIMBAD autocomplete returned invalid data") from error
+
+    for index in range(row_count):
+        matched_id = _simbad_text(result[id_column][index])
+        main_id = _simbad_text(result[main_column][index])
+        if not matched_id or not main_id:
+            continue
+        key = (matched_id.casefold(), main_id.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        suggestions.append(SimbadSourceSuggestion(matched_id, main_id))
+        if len(suggestions) >= limit:
+            break
+    return tuple(suggestions)
+
+
+def _main_id_from_simbad_result(result: object) -> str:
+    column_names = tuple(getattr(result, "colnames", ()))
+    for column in ("main_id", "MAIN_ID"):
+        if column in column_names:
+            try:
+                main_id = _simbad_text(result[column][0])
+            except (IndexError, KeyError, TypeError) as error:
+                raise SimbadSourceCatalogError(
+                    "SIMBAD verification returned invalid identifier data"
+                ) from error
+            if main_id:
+                return main_id
+    raise SimbadSourceCatalogError(
+        "SIMBAD verification response is missing the main identifier"
+    )
+
+
+def _simbad_text(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8").strip()
+    return str(value).strip()
 
 
 def _coordinates_from_simbad_result(result: object) -> EquatorialCoordinates:
@@ -383,6 +576,9 @@ __all__ = [
     "AstropyAstronomicalPositionCalculator",
     "MappingAstronomicalSourceResolver",
     "SimbadAstronomicalSourceResolver",
+    "SimbadSourceCatalog",
+    "SimbadSourceCatalogError",
+    "SimbadSourceSuggestion",
     "create_default_astronomical_cross_scan_service",
     "create_default_astronomical_raster_map_service",
     "create_default_astronomical_tracking_service",
