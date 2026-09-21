@@ -34,9 +34,19 @@ in the Output section.
 
 **Astronomical source**
 
-Enter a source name that can be resolved by SIMBAD. Network access is required
-for the normal SIMBAD lookup. Atmospheric parameters are available under the
-advanced options.
+Type at least two characters to search SIMBAD remotely. Matching identifiers are
+shown below the source field; selecting one fills the source name. Results that
+are already saved as favorites remain in the search list and are marked with a
+star.
+
+Use the star next to the source field to add or remove the current verified
+source from the local favorites list. Favorites are stored in the user
+configuration and persist across ARTools sessions. Selecting a favorite fills
+the SIMBAD source field. SIMBAD's internal `NAME ` prefix is not shown in the
+favorites list. Autocomplete also tolerates omitted identifier spaces, for
+example `W3(` can match `W 3(OH)`. Network access is required for SIMBAD search,
+source verification, and normal astronomical-source resolution. Atmospheric
+parameters are available under the advanced options.
 
 **Solar System body**
 

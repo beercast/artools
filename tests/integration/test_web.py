@@ -20,6 +20,7 @@ from artools.astronomical import (
     AstronomicalRasterMapService,
     AstronomicalTrackingService,
     MappingAstronomicalSourceResolver,
+    SimbadSourceSuggestion,
 )
 from artools.cli import main as cli_main
 from artools.satellite import (
@@ -32,6 +33,7 @@ from artools.solar_system import (
     SolarSystemRasterMapService,
     SolarSystemTrackingService,
 )
+from artools.preferences import SourceFavoritesStore
 from artools.webapp import create_app
 
 
@@ -77,6 +79,27 @@ class Catalog:
     def find(self, name: str) -> TleData:
         self.names.append(name)
         return TLE
+
+
+class SimbadCatalog:
+    def __init__(self) -> None:
+        self.searches: list[tuple[str, int]] = []
+        self.verifications: list[str] = []
+
+    def search(self, prefix: str, limit: int = 20):
+        self.searches.append((prefix, limit))
+        return (
+            SimbadSourceSuggestion("W3(OH)", "W3(OH)"),
+            SimbadSourceSuggestion("W3 Main", "W3 Main"),
+        )
+
+    def verify(self, name: str):
+        self.verifications.append(name)
+        if name == "missing":
+            from artools import AstronomicalSourceNotFoundError
+
+            raise AstronomicalSourceNotFoundError("Astronomical source not found: missing")
+        return SimbadSourceSuggestion(name, "W3(OH)" if name == "W3 OH" else name)
 
 
 def build_application(*, catalog=None) -> TrajectoryApplicationService:
@@ -157,6 +180,10 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     assert "Use current UTC time" in response.text
     assert 'class="start-time-controls"' in response.text
     assert 'class="sampling-grid"' in response.text
+    assert 'id="simbad-source-input"' in response.text
+    assert 'id="simbad-favorites-select"' in response.text
+    assert 'id="simbad-favorite-toggle"' in response.text
+    assert "Type at least two characters to search SIMBAD" in response.text
 
     css = client.get("/static/artools.css")
     assert css.status_code == 200
@@ -355,6 +382,124 @@ def test_web_requires_both_native_start_date_and_time() -> None:
 
     assert response.status_code == 400
     assert "Start date and start time must both be provided" in response.json()["detail"]
+
+
+def test_web_prefers_verified_canonical_simbad_source_from_ui() -> None:
+    application = build_application()
+    form = base_form("astronomical", "track")
+    form["source"] = "Altair"
+    form["source_canonical"] = "NAME Altair"
+
+    from artools.webapp import request_from_web_form
+
+    request = request_from_web_form(form, None, application)
+
+    assert request.target.name == "NAME Altair"
+
+
+def test_simbad_autocomplete_keeps_favorite_matches_in_results(tmp_path: Path) -> None:
+    catalog = SimbadCatalog()
+    favorites = SourceFavoritesStore(tmp_path / "preferences.json")
+    favorites.add("W3(OH)")
+    client = TestClient(
+        create_app(build_application(), simbad_catalog=catalog, favorites=favorites)
+    )
+
+    response = client.get("/api/simbad/suggestions", params={"q": "W3"})
+
+    assert response.status_code == 200
+    assert catalog.searches == [("W3", 20)]
+    assert response.json() == {
+        "suggestions": [
+            {"name": "W3(OH)", "main_id": "W3(OH)", "favorite": True},
+            {"name": "W3 Main", "main_id": "W3 Main", "favorite": False},
+        ]
+    }
+
+
+def test_simbad_autocomplete_does_not_query_for_one_character(tmp_path: Path) -> None:
+    catalog = SimbadCatalog()
+    client = TestClient(
+        create_app(
+            build_application(),
+            simbad_catalog=catalog,
+            favorites=SourceFavoritesStore(tmp_path / "preferences.json"),
+        )
+    )
+
+    response = client.get("/api/simbad/suggestions", params={"q": "W"})
+
+    assert response.status_code == 200
+    assert response.json() == {"suggestions": []}
+    assert catalog.searches == []
+
+
+def test_simbad_favorites_are_verified_persisted_and_removable(tmp_path: Path) -> None:
+    catalog = SimbadCatalog()
+    favorites = SourceFavoritesStore(tmp_path / "preferences.json")
+    client = TestClient(
+        create_app(build_application(), simbad_catalog=catalog, favorites=favorites)
+    )
+
+    added = client.post("/api/simbad/favorites", json={"name": "W3 OH"})
+    listed = client.get("/api/simbad/favorites")
+    removed = client.delete("/api/simbad/favorites", params={"name": "W3(OH)"})
+
+    assert added.status_code == 200
+    assert added.json()["favorite"] == "W3(OH)"
+    assert added.json()["favorites"] == ["W3(OH)"]
+    assert catalog.verifications == ["W3 OH"]
+    assert listed.json() == {"favorites": ["W3(OH)"]}
+    assert removed.json() == {"favorites": []}
+    assert SourceFavoritesStore(favorites.path).list() == ()
+
+
+def test_simbad_name_prefixed_favorite_keeps_canonical_value(tmp_path: Path) -> None:
+    class NameCatalog(SimbadCatalog):
+        def verify(self, name: str):
+            self.verifications.append(name)
+            return SimbadSourceSuggestion(name, "NAME Altair")
+
+    favorites = SourceFavoritesStore(tmp_path / "preferences.json")
+    client = TestClient(
+        create_app(build_application(), simbad_catalog=NameCatalog(), favorites=favorites)
+    )
+
+    added = client.post("/api/simbad/favorites", json={"name": "Altair"})
+    listed = client.get("/api/simbad/favorites")
+
+    assert added.status_code == 200
+    assert added.json()["favorite"] == "NAME Altair"
+    assert listed.json() == {"favorites": ["NAME Altair"]}
+    assert favorites.list() == ("NAME Altair",)
+
+
+def test_simbad_favorite_rejects_unknown_source(tmp_path: Path) -> None:
+    client = TestClient(
+        create_app(
+            build_application(),
+            simbad_catalog=SimbadCatalog(),
+            favorites=SourceFavoritesStore(tmp_path / "preferences.json"),
+        )
+    )
+
+    response = client.post("/api/simbad/favorites", json={"name": "missing"})
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]
+
+
+def test_packaged_javascript_contains_simbad_autocomplete_and_favorite_behavior() -> None:
+    script = (Path(__file__).parents[2] / "src" / "artools" / "web_assets" / "artools.js").read_text()
+
+    assert "/api/simbad/suggestions" in script
+    assert "/api/simbad/favorites" in script
+    assert "350" in script
+    assert "simbadCache" in script
+    assert "favorite-marker" in script
+    assert "suggestions.forEach" in script
+    assert 'replace(/^NAME\\s+/i, "")' in script
+    assert "simbad-source-canonical" in script
 
 
 def test_packaged_javascript_sets_current_time_using_utc_components() -> None:

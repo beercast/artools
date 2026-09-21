@@ -29,5 +29,7 @@ def test_developer_documentation_covers_primary_change_points() -> None:
         "generate_raster_map_trajectory()",
         "AuxiliaryTelescopeTrajectoryWriter",
         "Legacy notebook mapping",
+        "SimbadSourceCatalog",
+        "SourceFavoritesStore",
     ):
         assert expected in developer
