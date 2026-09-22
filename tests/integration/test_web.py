@@ -166,7 +166,7 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "Auxiliary Telescope trajectory generator" in response.text
+    assert "Trajectory generator" in response.text
     assert 'cdn.jsdelivr.net' not in response.text
     assert 'https://' not in response.text
     assert 'action="/generate"' in response.text

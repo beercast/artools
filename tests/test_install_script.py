@@ -106,6 +106,88 @@ def test_windows_launchers_call_project_venv_without_activation(tmp_path: Path) 
     assert ".venv\\Scripts\\artools-gui.exe" in gui.read_text(encoding="utf-8")
 
 
+def test_managed_venv_detection_uses_executable_path_without_resolving(
+    tmp_path: Path,
+) -> None:
+    module = _load_install_script()
+
+    assert module.running_from_managed_venv(
+        tmp_path, executable=tmp_path / ".venv" / "bin" / "python"
+    )
+    assert not module.running_from_managed_venv(
+        tmp_path, executable=tmp_path / "system" / "bin" / "python"
+    )
+
+
+def test_find_external_python_prefers_base_executable_outside_managed_venv(
+    tmp_path: Path,
+) -> None:
+    module = _load_install_script()
+    base_python = tmp_path / "base-python"
+    base_python.write_text("", encoding="utf-8")
+
+    result = module.find_external_python(
+        tmp_path,
+        base_executable=base_python,
+        base_prefix=tmp_path / "missing-prefix",
+    )
+
+    assert result == base_python
+
+
+def test_recreate_restarts_with_external_python_before_deleting_venv(
+    tmp_path: Path, monkeypatch
+) -> None:
+    module = _load_install_script()
+    base_python = tmp_path / "base-python"
+    base_python.write_text("", encoding="utf-8")
+    calls: list[tuple[str, list[str]]] = []
+
+    monkeypatch.setattr(module, "running_from_managed_venv", lambda root: True)
+    monkeypatch.setattr(module, "find_external_python", lambda root: base_python)
+
+    class Restarted(Exception):
+        pass
+
+    def fake_execv(executable, args):
+        calls.append((executable, args))
+        raise Restarted
+
+    monkeypatch.setattr(module.os, "execv", fake_execv)
+
+    with pytest.raises(Restarted):
+        module.restart_for_recreate(tmp_path, ["--recreate", "--dev"])
+
+    assert calls == [
+        (
+            str(base_python),
+            [
+                str(base_python),
+                str(tmp_path / "install.py"),
+                "--recreate",
+                "--dev",
+            ],
+        )
+    ]
+
+
+def test_recreate_fails_safely_if_base_python_cannot_be_found(
+    tmp_path: Path,
+) -> None:
+    module = _load_install_script()
+    managed_python = tmp_path / ".venv" / "bin" / "python"
+    managed_python.parent.mkdir(parents=True)
+    managed_python.write_text("", encoding="utf-8")
+
+    with pytest.raises(module.InstallerError, match="No files were removed"):
+        module.find_external_python(
+            tmp_path,
+            base_executable=managed_python,
+            base_prefix=tmp_path / "missing-prefix",
+            os_name="posix",
+        )
+
+
 def test_recreate_removes_existing_environment_before_creation(tmp_path: Path, monkeypatch) -> None:
     module = _load_install_script()
     venv_dir = tmp_path / ".venv"
