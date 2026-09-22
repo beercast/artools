@@ -80,6 +80,94 @@ def venv_entry_point(
     return venv_dir / "bin" / name
 
 
+def _absolute_path(path: str | Path) -> Path:
+    """Return an absolute path without resolving symlinks."""
+    return Path(os.path.abspath(os.fspath(path)))
+
+
+def _path_is_within(path: str | Path, directory: str | Path) -> bool:
+    """Return whether *path* is lexically inside *directory*."""
+    try:
+        _absolute_path(path).relative_to(_absolute_path(directory))
+    except ValueError:
+        return False
+    return True
+
+
+def running_from_managed_venv(
+    project_root: Path, *, executable: str | Path | None = None
+) -> bool:
+    """Return whether the installer is running with this project's .venv Python."""
+    executable = executable or sys.executable
+    return _path_is_within(executable, project_root / VENV_DIRNAME)
+
+
+def find_external_python(
+    project_root: Path,
+    *,
+    base_executable: str | Path | None = None,
+    base_prefix: str | Path | None = None,
+    os_name: str | None = None,
+) -> Path:
+    """Find the base Python interpreter outside the managed virtual environment."""
+    os_name = os_name or os.name
+    venv_dir = project_root / VENV_DIRNAME
+    candidates: list[Path] = []
+
+    base_executable = base_executable or getattr(sys, "_base_executable", None)
+    if base_executable:
+        candidates.append(Path(base_executable))
+
+    prefix = Path(base_prefix or sys.base_prefix)
+    if os_name == "nt":
+        candidates.extend((prefix / "python.exe", prefix / "python3.exe"))
+    else:
+        versioned_name = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        candidates.extend(
+            (
+                prefix / "bin" / versioned_name,
+                prefix / "bin" / "python3",
+                prefix / "bin" / "python",
+            )
+        )
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        candidate = _absolute_path(candidate)
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate.is_file() and not _path_is_within(candidate, venv_dir):
+            return candidate
+
+    raise InstallerError(
+        "--recreate is running with the ARTools virtual-environment Python, "
+        "but the base Python interpreter could not be found. No files were removed. "
+        "Open a new terminal and run 'python install.py --recreate' again."
+    )
+
+
+def restart_for_recreate(project_root: Path, argv: Sequence[str]) -> None:
+    """Restart with base Python before deleting the environment that runs us."""
+    if not running_from_managed_venv(project_root):
+        return
+
+    python = find_external_python(project_root)
+    script = project_root / "install.py"
+    print(
+        "ARTools --recreate is running from the managed virtual environment.\n"
+        f"Restarting the installer with base Python: {python}",
+        flush=True,
+    )
+    try:
+        os.execv(str(python), [str(python), str(script), *argv])
+    except OSError as error:
+        raise InstallerError(
+            f"Could not restart the installer with base Python {python}: {error}. "
+            "No files were removed."
+        ) from error
+
+
 def build_install_command(python: Path, *, dev: bool = False) -> list[str]:
     """Return the pip command for a runtime or development installation."""
     extras = list(RUNTIME_EXTRAS)
@@ -257,10 +345,13 @@ def project_root() -> Path:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Create/update the local environment, install ARTools, and write launchers."""
-    args = build_parser().parse_args(argv)
+    effective_argv = list(sys.argv[1:] if argv is None else argv)
+    args = build_parser().parse_args(effective_argv)
     root = project_root()
 
     try:
+        if args.recreate:
+            restart_for_recreate(root, effective_argv)
         check_python_version()
         print(
             f"ARTools installer - Python {sys.version_info.major}."

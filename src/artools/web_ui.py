@@ -26,9 +26,9 @@ def render_index() -> str:
   <main class="shell">
     <header class="hero">
       <div>
-        <p class="eyebrow">Sardinia Radio Telescope site</p>
+        <p class="eyebrow">SRT Auxiliary Reference Telescope tools</p>
         <h1>ARTools</h1>
-        <p class="subtitle">Auxiliary Telescope trajectory generator</p>
+        <p class="subtitle">Trajectory generator</p>
       </div>
       <div class="status-chip"><span class="status-dot"></span>Local server</div>
     </header>
@@ -37,12 +37,12 @@ def render_index() -> str:
       <form id="trajectory-form" action="/generate" method="post" enctype="multipart/form-data" data-generate-form>
         <div class="section-heading">
           <div><span class="step">01</span><h2>Trajectory</h2></div>
-          <p>Choose the controlled system, target family, and trajectory mode.</p>
+          <p>Choose the telescope, target family, and trajectory mode.</p>
         </div>
 
         <div class="grid three">
           <label>
-            <span>Controlled system</span>
+            <span>Telescope</span>
             <select name="controlled_system" id="controlled-system">
               <option value="auxiliary_telescope">Auxiliary Telescope</option>
             </select>
@@ -229,13 +229,13 @@ def _atmosphere_fields() -> str:
         <summary>Atmospheric parameters</summary>
         <div class="grid four detail-grid">
           <label><span>Pressure <small>hPa</small></span>
-            <input name="pressure_hpa" type="number" min="0" step="any" value="0">
+            <input name="pressure_hpa" type="number" min="0" step="any" value="950">
           </label>
           <label><span>Temperature <small>deg C</small></span>
-            <input name="temperature_c" type="number" step="any" value="0">
+            <input name="temperature_c" type="number" step="any" value="20">
           </label>
           <label><span>Relative humidity</span>
-            <input name="relative_humidity" type="number" min="0" step="any" value="0">
+            <input name="relative_humidity" type="number" min="0" step="any" value="45">
           </label>
           <label><span>Wavelength <small>m</small></span>
             <input name="wavelength_m" type="number" min="0.000000001" step="any" value="0.013627">
