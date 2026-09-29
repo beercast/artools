@@ -170,11 +170,18 @@
     if (input) input.setAttribute("aria-expanded", "false");
   }
 
-  function renderSuggestions(suggestions) {
+  function renderSuggestions(suggestions, limitReached = false, limit = 20) {
     const menu = document.getElementById("simbad-suggestions");
     const input = document.getElementById("simbad-source-input");
     if (!menu || !input) return;
     menu.replaceChildren();
+
+    if (limitReached) {
+      const note = document.createElement("div");
+      note.className = "autocomplete-limit-note";
+      note.textContent = `Showing the first ${limit} matches. Type more characters to refine the search.`;
+      menu.appendChild(note);
+    }
 
     if (!suggestions.length) {
       const empty = document.createElement("div");
@@ -227,7 +234,8 @@
   async function searchSimbad(query) {
     const key = query.trim().toLowerCase();
     if (simbadCache.has(key)) {
-      renderSuggestions(simbadCache.get(key));
+      const cached = simbadCache.get(key);
+      renderSuggestions(cached.suggestions, cached.limitReached, cached.limit);
       return;
     }
 
@@ -237,9 +245,13 @@
       const payload = await jsonRequest(`/api/simbad/suggestions?q=${encodeURIComponent(query)}`, {
         signal: simbadAbortController.signal,
       });
-      const suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
-      simbadCache.set(key, suggestions);
-      renderSuggestions(suggestions);
+      const result = {
+        suggestions: Array.isArray(payload.suggestions) ? payload.suggestions : [],
+        limitReached: Boolean(payload.limit_reached),
+        limit: Number.isInteger(payload.limit) ? payload.limit : 20,
+      };
+      simbadCache.set(key, result);
+      renderSuggestions(result.suggestions, result.limitReached, result.limit);
       sourceStatus("", "");
     } catch (error) {
       if (error && error.name === "AbortError") return;

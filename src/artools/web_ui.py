@@ -142,7 +142,7 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
         chunks.append('''
           <div class="astronomical-source-grid target-grid">
             <div class="source-search-field">
-              <span class="field-label">SIMBAD source name</span>
+              <span class="field-label">Search SIMBAD source</span>
               <div class="source-input-row">
                 <div class="source-autocomplete">
                   <input name="source" id="simbad-source-input" type="text" required
@@ -164,7 +164,7 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
               </select>
             </label>
           </div>
-          <p class="hint source-hint">Type at least two characters to search SIMBAD.</p>''')
+          <p class="hint source-hint">Remote SIMBAD search. Type at least two characters. Suggestions are limited; continue typing to refine the search, or enter a complete source name directly.</p>''')
         chunks.append(_atmosphere_fields())
     elif family == "solar-system":
         options = "".join(

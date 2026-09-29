@@ -130,6 +130,17 @@ input:focus, select:focus, textarea:focus { border-color: #6ba9bd; background: w
 .autocomplete-names small { color: var(--muted); font-size: 11px; font-weight: 500; }
 .favorite-marker { flex: 0 0 auto; color: #b57600; font-size: 14px; }
 .autocomplete-empty { padding: 10px 12px; color: var(--muted); font-size: 12px; }
+.autocomplete-limit-note {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #f7fafb;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
 .source-message { min-height: 16px; color: var(--muted); font-size: 11px; font-weight: 500; }
 .source-message.success { color: var(--success); }
 .source-message.error { color: var(--danger); }

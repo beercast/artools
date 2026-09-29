@@ -53,6 +53,9 @@ from .solar_system import (
 from .web_ui import render_dynamic_fields, render_index
 
 
+SIMBAD_SUGGESTION_LIMIT = 20
+
+
 class WebInputError(ValueError):
     """Raised when submitted web form data is invalid."""
 
@@ -102,9 +105,17 @@ def create_app(
     async def simbad_suggestions(q: str = "") -> JSONResponse:
         query = q.strip()
         if len(query) < 2:
-            return JSONResponse({"suggestions": []})
+            return JSONResponse(
+                {
+                    "suggestions": [],
+                    "limit": SIMBAD_SUGGESTION_LIMIT,
+                    "limit_reached": False,
+                }
+            )
         try:
-            matches = await run_in_threadpool(source_catalog.search, query, 20)
+            matches = await run_in_threadpool(
+                source_catalog.search, query, SIMBAD_SUGGESTION_LIMIT
+            )
             favorite_names = {_favorite_key(name) for name in favorites_store.list()}
         except (AstronomyDependencyError, SimbadSourceCatalogError) as error:
             return JSONResponse({"detail": str(error)}, status_code=502)
@@ -120,7 +131,9 @@ def create_app(
                         "favorite": _favorite_key(match.main_id) in favorite_names,
                     }
                     for match in matches
-                ]
+                ],
+                "limit": SIMBAD_SUGGESTION_LIMIT,
+                "limit_reached": len(matches) >= SIMBAD_SUGGESTION_LIMIT,
             }
         )
 

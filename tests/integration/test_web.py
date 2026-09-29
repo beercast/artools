@@ -185,7 +185,9 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     assert 'id="simbad-source-input"' in response.text
     assert 'id="simbad-favorites-select"' in response.text
     assert 'id="simbad-favorite-toggle"' in response.text
-    assert "Type at least two characters to search SIMBAD" in response.text
+    assert "Remote SIMBAD search" in response.text
+    assert "Suggestions are limited" in response.text
+    assert "enter a complete source name directly" in response.text
 
     css = client.get("/static/artools.css")
     assert css.status_code == 200
@@ -196,7 +198,7 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
 @pytest.mark.parametrize(
     ("family", "mode", "expected", "unexpected"),
     [
-        ("astronomical", "track", "SIMBAD source name", "Half span"),
+        ("astronomical", "track", "Search SIMBAD source", "Half span"),
         ("astronomical", "cross-scan", "Half span", "Download fresh TLE"),
         ("astronomical", "map", "Half span", "Download fresh TLE"),
         ("solar-system", "track", "Solar System body", "Half span"),
@@ -415,7 +417,9 @@ def test_simbad_autocomplete_keeps_favorite_matches_in_results(tmp_path: Path) -
         "suggestions": [
             {"name": "W3(OH)", "main_id": "W3(OH)", "favorite": True},
             {"name": "W3 Main", "main_id": "W3 Main", "favorite": False},
-        ]
+        ],
+        "limit": 20,
+        "limit_reached": False,
     }
 
 
@@ -432,8 +436,48 @@ def test_simbad_autocomplete_does_not_query_for_one_character(tmp_path: Path) ->
     response = client.get("/api/simbad/suggestions", params={"q": "W"})
 
     assert response.status_code == 200
-    assert response.json() == {"suggestions": []}
+    assert response.json() == {"suggestions": [], "limit": 20, "limit_reached": False}
     assert catalog.searches == []
+
+
+def test_simbad_autocomplete_reports_when_result_limit_is_reached(tmp_path: Path) -> None:
+    class FullCatalog(SimbadCatalog):
+        def search(self, prefix: str, limit: int = 20):
+            self.searches.append((prefix, limit))
+            return tuple(
+                SimbadSourceSuggestion(f"SOURCE {index:02d}", f"SOURCE {index:02d}")
+                for index in range(limit)
+            )
+
+    catalog = FullCatalog()
+    client = TestClient(
+        create_app(
+            build_application(),
+            simbad_catalog=catalog,
+            favorites=SourceFavoritesStore(tmp_path / "preferences.json"),
+        )
+    )
+
+    response = client.get("/api/simbad/suggestions", params={"q": "SO"})
+
+    assert response.status_code == 200
+    assert catalog.searches == [("SO", 20)]
+    assert len(response.json()["suggestions"]) == 20
+    assert response.json()["limit"] == 20
+    assert response.json()["limit_reached"] is True
+
+
+def test_direct_simbad_source_name_does_not_require_autocomplete_selection() -> None:
+    application = build_application()
+    form = base_form("astronomical", "track")
+    form["source"] = "A DIRECT SIMBAD NAME"
+    form["source_canonical"] = ""
+
+    from artools.webapp import request_from_web_form
+
+    request = request_from_web_form(form, None, application)
+
+    assert request.target.name == "A DIRECT SIMBAD NAME"
 
 
 def test_simbad_favorites_are_verified_persisted_and_removable(tmp_path: Path) -> None:
@@ -502,6 +546,8 @@ def test_packaged_javascript_contains_simbad_autocomplete_and_favorite_behavior(
     assert "suggestions.forEach" in script
     assert 'replace(/^NAME\\s+/i, "")' in script
     assert "simbad-source-canonical" in script
+    assert "limit_reached" in script
+    assert "Showing the first ${limit} matches. Type more characters to refine the search." in script
 
 
 def test_packaged_javascript_sets_current_time_using_utc_components() -> None:

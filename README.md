@@ -65,8 +65,10 @@ details needed to understand where each step happens in the code.
 For an astronomical source, trajectory generation has four main steps:
 
 1. **Identify the source.** The user starts typing a source name in the web
-   interface. ARTools queries the remote SIMBAD service and shows matching
-   astronomical sources. The user selects the desired source.
+   interface. ARTools queries the remote SIMBAD service and shows a limited set
+   of matching identifiers. The user can refine the search by typing more
+   characters, select one of the suggestions, or enter a complete source name
+   directly.
 2. **Get the source coordinates.** ARTools queries SIMBAD again using the selected
    source name and obtains its equatorial coordinates: right ascension (RA) and
    declination (Dec).
@@ -107,9 +109,12 @@ FastAPI backend, which uses the
 remote SIMBAD service. Astroquery is a third-party Python package for accessing
 astronomical web services.
 
-The autocomplete starts after at least two characters have been entered.
-Favorites are stored locally and only help the user select a source; they do not
-change the trajectory calculation.
+The autocomplete starts after at least two characters have been entered. SIMBAD
+search results are intentionally limited, so the GUI states when the displayed
+list has reached that limit and asks the user to type more characters to refine
+the search. A complete source name can also be entered directly even if it does
+not appear in the suggestions. Favorites are stored locally and only help the
+user select a source; they do not change the trajectory calculation.
 
 When the user presses `Generate trajectory`, ARTools queries SIMBAD again to
 obtain the selected source RA/Dec coordinates. It then uses the
