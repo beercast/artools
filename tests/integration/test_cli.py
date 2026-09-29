@@ -23,6 +23,7 @@ from artools.satellite import (
     SatelliteCrossScanService,
     SatelliteRasterMapService,
     SatelliteTrackingService,
+    TleCatalogStore,
 )
 from artools.solar_system import (
     SolarSystemCrossScanService,
@@ -80,7 +81,9 @@ class Catalog:
         return TLE
 
 
-def build_application(epoch: datetime) -> TrajectoryApplicationService:
+def build_application(
+    epoch: datetime, *, tle_catalog_store: TleCatalogStore | None = None
+) -> TrajectoryApplicationService:
     resolver = MappingAstronomicalSourceResolver(
         {"TEST SOURCE": EquatorialCoordinates(10.0, 20.0)}
     )
@@ -99,6 +102,7 @@ def build_application(epoch: datetime) -> TrajectoryApplicationService:
         satellite_cross_scan=SatelliteCrossScanService(satellite, refraction),
         satellite_raster_map=SatelliteRasterMapService(satellite, refraction),
         tle_catalog=Catalog(),
+        tle_catalog_store=tle_catalog_store,
     )
 
 
@@ -124,13 +128,13 @@ def common_args(output: Path) -> list[str]:
         (["solar-system", "track", "moon"], "track", 3),
         (["solar-system", "cross-scan", "moon"], "cross-scan", 6),
         (["solar-system", "map", "moon"], "map", 9),
-        (["satellite", "track", "--catalog-name", "TEST SATELLITE"], "track", 3),
+        (["satellite", "track", "--tle-text", TLE.to_three_line_string()], "track", 3),
         (
-            ["satellite", "cross-scan", "--catalog-name", "TEST SATELLITE"],
+            ["satellite", "cross-scan", "--tle-text", TLE.to_three_line_string()],
             "cross-scan",
             6,
         ),
-        (["satellite", "map", "--catalog-name", "TEST SATELLITE"], "map", 9),
+        (["satellite", "map", "--tle-text", TLE.to_three_line_string()], "map", 9),
     ],
 )
 def test_cli_generates_every_target_family_and_mode(
@@ -240,3 +244,51 @@ def test_cli_reports_invalid_runtime_values_without_traceback(
     captured = capsys.readouterr()
     assert "artools: error:" in captured.err
     assert "Traceback" not in captured.err
+
+
+class DownloadCatalog:
+    def download_group(self, group: str = "geo"):
+        assert group == "geo"
+        return (TLE,)
+
+
+def test_cli_selects_satellite_from_multi_record_catalog(tmp_path: Path, capsys) -> None:
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    application = build_application(epoch)
+    second = TleData(
+        name="SECOND SATELLITE",
+        line1="1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753",
+        line2="2 00005  34.2682 331.5174 1849677 331.7664  19.3264 10.82419157413667",
+    )
+    catalog_file = tmp_path / "catalog.txt"
+    catalog_file.write_text(
+        TLE.to_three_line_string() + "\n" + second.to_three_line_string() + "\n",
+        encoding="ascii",
+    )
+    output = tmp_path / "satellite.txt"
+
+    argv = [
+        "satellite", "track", "--tle-file", str(catalog_file),
+        "--satellite", "SECOND SATELLITE",
+    ] + common_args(output)
+    assert main(argv, application=application) == 0
+    assert capsys.readouterr().err == ""
+    assert output.exists()
+
+
+def test_cli_downloads_geo_catalog_saves_it_and_selects_satellite(
+    tmp_path: Path, capsys
+) -> None:
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    store = TleCatalogStore(tmp_path / "tle", remote_catalog=DownloadCatalog())
+    application = build_application(epoch, tle_catalog_store=store)
+    output = tmp_path / "downloaded.txt"
+
+    argv = [
+        "satellite", "track", "--download-tle",
+        "--satellite", "TEST SATELLITE",
+    ] + common_args(output)
+    assert main(argv, application=application) == 0
+    assert capsys.readouterr().err == ""
+    assert store.downloaded_path.exists()
+    assert output.exists()

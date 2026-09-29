@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from artools import (
+    ApplicationError,
     AtmosphericParameters,
     AstronomicalSourceTarget,
     HorizontalCoordinates,
@@ -270,3 +271,24 @@ def test_satellite_targets_can_come_from_offline_file_or_injected_catalog(
     assert application.satellite_target_from_tle_file(tle_file).tle == TLE
     assert application.satellite_target_from_catalog("TEST SATELLITE").tle == TLE
     assert catalog.names == ["TEST SATELLITE"]
+
+
+def test_satellite_target_can_be_selected_from_multi_record_tle_file(tmp_path: Path) -> None:
+    epoch = datetime(2026, 1, 1, tzinfo=UTC)
+    application = build_test_application(epoch)
+    second = TleData(
+        name="SECOND SATELLITE",
+        line1="1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753",
+        line2="2 00005  34.2682 331.5174 1849677 331.7664  19.3264 10.82419157413667",
+    )
+    tle_file = tmp_path / "catalog.txt"
+    tle_file.write_text(
+        TLE.to_three_line_string() + "\n" + second.to_three_line_string() + "\n",
+        encoding="ascii",
+    )
+
+    assert application.satellite_target_from_tle_catalog_file(
+        tle_file, "SECOND SATELLITE"
+    ).tle == second
+    with pytest.raises(ApplicationError, match="satellite name is required"):
+        application.satellite_target_from_tle_catalog_file(tle_file)

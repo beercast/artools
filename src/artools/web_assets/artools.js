@@ -331,6 +331,279 @@
     loadFavorites();
   }
 
+  const satelliteState = {
+    source: "download",
+    download: { loaded: false, catalogId: "", filename: "", satellites: [] },
+    upload: { loaded: false, catalogId: "", filename: "", satellites: [] },
+    pasteText: "",
+  };
+
+  function satelliteStatus(id, message, kind) {
+    const node = document.getElementById(id);
+    if (!node) return;
+    node.textContent = message || "";
+    node.className = "source-message" + (kind ? " " + kind : "");
+  }
+
+  function clearSatelliteSuggestions() {
+    const menu = document.getElementById("satellite-suggestions");
+    const input = document.getElementById("satellite-name-input");
+    if (menu) {
+      menu.replaceChildren();
+      menu.hidden = true;
+    }
+    if (input) input.setAttribute("aria-expanded", "false");
+  }
+
+  function activeSatelliteCatalog() {
+    if (satelliteState.source === "download") return satelliteState.download;
+    if (satelliteState.source === "upload") return satelliteState.upload;
+    return null;
+  }
+
+  function renderSatelliteSuggestions(query = "") {
+    const menu = document.getElementById("satellite-suggestions");
+    const input = document.getElementById("satellite-name-input");
+    const catalog = activeSatelliteCatalog();
+    if (!menu || !input || !catalog || !catalog.loaded) return;
+
+    const key = query.trim().toLowerCase();
+    const matches = catalog.satellites
+      .filter((name) => !key || name.toLowerCase().includes(key));
+
+    menu.replaceChildren();
+    if (!matches.length) {
+      const empty = document.createElement("div");
+      empty.className = "autocomplete-empty";
+      empty.textContent = "No satellites match.";
+      menu.appendChild(empty);
+    } else {
+      matches.forEach((name) => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.className = "autocomplete-option";
+        option.setAttribute("role", "option");
+
+        const names = document.createElement("span");
+        names.className = "autocomplete-names";
+        const label = document.createElement("strong");
+        label.textContent = name;
+        names.appendChild(label);
+        option.appendChild(names);
+
+        option.addEventListener("click", () => {
+          input.value = name;
+          input.dataset.selectedName = name;
+          clearSatelliteSuggestions();
+        });
+        menu.appendChild(option);
+      });
+    }
+
+    menu.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+  }
+
+  function setSatelliteCatalog(kind, payload) {
+    const catalog = satelliteState[kind];
+    catalog.loaded = Boolean(payload && payload.available);
+    catalog.catalogId = payload && payload.catalog_id ? payload.catalog_id : "";
+    catalog.filename = payload && payload.filename ? payload.filename : "";
+    catalog.satellites = payload && Array.isArray(payload.satellites)
+      ? payload.satellites.slice().sort((left, right) => left.localeCompare(right))
+      : [];
+    updateSatelliteSourceUi();
+  }
+
+  function updateSatelliteSourceUi() {
+    const source = document.getElementById("tle-source");
+    const downloadPanel = document.getElementById("tle-download-panel");
+    const uploadPanel = document.getElementById("tle-upload-panel");
+    const pastePanel = document.getElementById("tle-paste-panel");
+    const selector = document.getElementById("satellite-catalog-selection");
+    const input = document.getElementById("satellite-name-input");
+    const catalogId = document.getElementById("tle-catalog-id");
+    const paste = document.getElementById("tle-text");
+    const hint = document.getElementById("satellite-catalog-hint");
+    const downloadButton = document.getElementById("tle-download-button");
+    const downloadCheck = document.getElementById("tle-download-check");
+    const uploadCheck = document.getElementById("tle-upload-check");
+    if (!source) return;
+
+    source.value = satelliteState.source;
+    if (downloadPanel) downloadPanel.hidden = satelliteState.source !== "download";
+    if (uploadPanel) uploadPanel.hidden = satelliteState.source !== "upload";
+    if (pastePanel) pastePanel.hidden = satelliteState.source !== "paste";
+
+    if (paste) {
+      paste.required = satelliteState.source === "paste";
+      if (document.activeElement !== paste) paste.value = satelliteState.pasteText;
+    }
+
+    const catalog = activeSatelliteCatalog();
+    const catalogReady = Boolean(catalog && catalog.loaded);
+    if (selector) selector.hidden = !catalogReady;
+    if (input) {
+      input.required = catalogReady;
+      input.disabled = !catalogReady;
+      if (!catalogReady) input.value = "";
+    }
+    if (catalogId) catalogId.value = catalogReady ? catalog.catalogId : "";
+    if (hint) {
+      hint.textContent = catalogReady
+        ? `${catalog.satellites.length} satellites available from ${catalog.filename}. Type to filter the list.`
+        : "";
+    }
+    if (downloadButton) downloadButton.textContent = satelliteState.download.loaded ? "Refresh" : "Download";
+    if (downloadCheck) downloadCheck.hidden = !satelliteState.download.loaded;
+    if (uploadCheck) uploadCheck.hidden = !satelliteState.upload.loaded;
+    clearSatelliteSuggestions();
+  }
+
+  async function loadDownloadedCatalogStatus() {
+    try {
+      const payload = await jsonRequest("/api/tle/downloaded");
+      setSatelliteCatalog("download", payload);
+      if (payload.available) {
+        satelliteStatus(
+          "tle-download-status",
+          `Saved catalog ready (${payload.count} satellites).`,
+          "success"
+        );
+      } else {
+        satelliteStatus("tle-download-status", "No saved catalog yet.", "");
+      }
+    } catch (error) {
+      satelliteStatus(
+        "tle-download-status",
+        error instanceof Error ? error.message : "Could not read the saved TLE catalog.",
+        "error"
+      );
+    }
+  }
+
+  async function downloadSatelliteCatalog() {
+    const button = document.getElementById("tle-download-button");
+    if (!button) return;
+    const oldLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = satelliteState.download.loaded ? "Refreshing..." : "Downloading...";
+    satelliteStatus("tle-download-status", "Downloading CelesTrak GEO catalog...", "");
+    try {
+      const payload = await jsonRequest("/api/tle/download", { method: "POST" });
+      setSatelliteCatalog("download", payload);
+      satelliteStatus(
+        "tle-download-status",
+        `Catalog saved (${payload.count} satellites).`,
+        "success"
+      );
+    } catch (error) {
+      button.textContent = oldLabel;
+      satelliteStatus(
+        "tle-download-status",
+        error instanceof Error ? error.message : "TLE download failed.",
+        "error"
+      );
+    } finally {
+      button.disabled = false;
+      if (satelliteState.download.loaded) button.textContent = "Refresh";
+    }
+  }
+
+  async function uploadSatelliteCatalog(file) {
+    if (!file) return;
+    const button = document.getElementById("tle-upload-button");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Loading...";
+    }
+    satelliteStatus("tle-upload-status", `Reading ${file.name}...`, "");
+    const formData = new FormData();
+    formData.append("catalog_file", file);
+    try {
+      const payload = await jsonRequest("/api/tle/upload", { method: "POST", body: formData });
+      setSatelliteCatalog("upload", payload);
+      satelliteStatus(
+        "tle-upload-status",
+        `Loaded ${payload.count} satellites. Copy saved as ${payload.filename}.`,
+        "success"
+      );
+    } catch (error) {
+      satelliteState.upload = { loaded: false, catalogId: "", filename: "", satellites: [] };
+      updateSatelliteSourceUi();
+      satelliteStatus(
+        "tle-upload-status",
+        error instanceof Error ? error.message : "Could not load TLE catalog.",
+        "error"
+      );
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Upload file";
+      }
+    }
+  }
+
+  async function openTleFolder() {
+    try {
+      await jsonRequest("/api/tle/open-folder", { method: "POST" });
+      satelliteStatus("tle-upload-status", "Opened the ARTools TLE folder.", "success");
+    } catch (error) {
+      satelliteStatus(
+        "tle-upload-status",
+        error instanceof Error ? error.message : "Could not open the TLE folder.",
+        "error"
+      );
+    }
+  }
+
+  function initSatelliteControls() {
+    const source = document.getElementById("tle-source");
+    const downloadButton = document.getElementById("tle-download-button");
+    const uploadButton = document.getElementById("tle-upload-button");
+    const openFolderButton = document.getElementById("tle-open-folder-button");
+    const fileInput = document.getElementById("tle-catalog-file");
+    const satelliteInput = document.getElementById("satellite-name-input");
+    const paste = document.getElementById("tle-text");
+    if (!source || source.dataset.satelliteReady === "true") return;
+
+    source.dataset.satelliteReady = "true";
+    source.value = satelliteState.source;
+    source.addEventListener("change", () => {
+      satelliteState.source = source.value;
+      updateSatelliteSourceUi();
+      if (satelliteState.source === "download" && !satelliteState.download.loaded) {
+        loadDownloadedCatalogStatus();
+      }
+    });
+
+    if (downloadButton) downloadButton.addEventListener("click", downloadSatelliteCatalog);
+    if (uploadButton && fileInput) uploadButton.addEventListener("click", () => fileInput.click());
+    if (fileInput) {
+      fileInput.addEventListener("change", () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (file) uploadSatelliteCatalog(file);
+        fileInput.value = "";
+      });
+    }
+    if (openFolderButton) openFolderButton.addEventListener("click", openTleFolder);
+    if (satelliteInput) {
+      satelliteInput.addEventListener("input", () => {
+        delete satelliteInput.dataset.selectedName;
+        renderSatelliteSuggestions(satelliteInput.value);
+      });
+      satelliteInput.addEventListener("focus", () => renderSatelliteSuggestions(satelliteInput.value));
+    }
+    if (paste) {
+      paste.addEventListener("input", () => { satelliteState.pasteText = paste.value; });
+    }
+
+    updateSatelliteSourceUi();
+    if (satelliteState.source === "download" && !satelliteState.download.loaded) {
+      loadDownloadedCatalogStatus();
+    }
+  }
+
   async function dynamicFields() {
     const family = document.getElementById("target-family");
     const mode = document.getElementById("trajectory-mode");
@@ -344,6 +617,7 @@
         if (response.ok) {
           target.innerHTML = await response.text();
           initAstronomicalSourceControls();
+          initSatelliteControls();
         }
       } catch (_) {
         // The initial server-rendered fields remain usable if the request fails.
@@ -356,6 +630,8 @@
   document.addEventListener("click", (event) => {
     const sourceField = document.querySelector(".source-search-field");
     if (sourceField && !sourceField.contains(event.target)) clearSuggestions();
+    const satelliteField = document.querySelector(".satellite-catalog-selection");
+    if (satelliteField && !satelliteField.contains(event.target)) clearSatelliteSuggestions();
   });
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -370,5 +646,6 @@
     if (currentUtcButton) currentUtcButton.addEventListener("click", setCurrentUtc);
     dynamicFields();
     initAstronomicalSourceControls();
+    initSatelliteControls();
   });
 })();

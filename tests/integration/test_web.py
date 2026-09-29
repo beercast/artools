@@ -27,6 +27,7 @@ from artools.satellite import (
     SatelliteCrossScanService,
     SatelliteRasterMapService,
     SatelliteTrackingService,
+    TleCatalogStore,
 )
 from artools.solar_system import (
     SolarSystemCrossScanService,
@@ -102,7 +103,7 @@ class SimbadCatalog:
         return SimbadSourceSuggestion(name, "W3(OH)" if name == "W3 OH" else name)
 
 
-def build_application(*, catalog=None) -> TrajectoryApplicationService:
+def build_application(*, catalog=None, tle_catalog_store=None) -> TrajectoryApplicationService:
     resolver = MappingAstronomicalSourceResolver(
         {"TEST SOURCE": EquatorialCoordinates(10.0, 20.0)}
     )
@@ -121,6 +122,7 @@ def build_application(*, catalog=None) -> TrajectoryApplicationService:
         satellite_cross_scan=SatelliteCrossScanService(satellite, refraction),
         satellite_raster_map=SatelliteRasterMapService(satellite, refraction),
         tle_catalog=catalog,
+        tle_catalog_store=tle_catalog_store,
     )
 
 
@@ -195,12 +197,12 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     ("family", "mode", "expected", "unexpected"),
     [
         ("astronomical", "track", "SIMBAD source name", "Half span"),
-        ("astronomical", "cross-scan", "Half span", "Paste named TLE"),
-        ("astronomical", "map", "Half span", "Paste named TLE"),
+        ("astronomical", "cross-scan", "Half span", "Download fresh TLE"),
+        ("astronomical", "map", "Half span", "Download fresh TLE"),
         ("solar-system", "track", "Solar System body", "Half span"),
-        ("solar-system", "cross-scan", "Half span", "Paste named TLE"),
-        ("solar-system", "map", "Half span", "Paste named TLE"),
-        ("satellite", "track", "Paste named TLE", "Pressure"),
+        ("solar-system", "cross-scan", "Half span", "Download fresh TLE"),
+        ("solar-system", "map", "Half span", "Download fresh TLE"),
+        ("satellite", "track", "Download fresh TLE", "Pressure"),
         ("satellite", "cross-scan", "Half span", "Pressure"),
         ("satellite", "map", "Half span", "Pressure"),
     ],
@@ -322,7 +324,7 @@ def test_web_rejects_ambiguous_satellite_sources() -> None:
     response = client.post("/generate", data=form)
 
     assert response.status_code == 400
-    assert "exactly one satellite source" in response.json()["detail"]
+    assert "Choose one TLE source" in response.json()["detail"]
 
 
 def test_web_rejects_server_side_paths_as_download_names() -> None:
@@ -512,3 +514,119 @@ def test_packaged_javascript_sets_current_time_using_utc_components() -> None:
     assert "getUTCMinutes" in script
     assert "getUTCSeconds" in script
     assert 'getElementById("use-current-utc")' in script
+
+
+class GroupCatalog:
+    def __init__(self, records):
+        self.records = tuple(records)
+        self.groups = []
+
+    def download_group(self, group: str = "geo"):
+        self.groups.append(group)
+        return self.records
+
+
+def test_web_downloaded_tle_catalog_is_persistent_and_refreshable(tmp_path: Path) -> None:
+    second = TleData(
+        name="SECOND SATELLITE",
+        line1="1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753",
+        line2="2 00005  34.2682 331.5174 1849677 331.7664  19.3264 10.82419157413667",
+    )
+    remote = GroupCatalog((TLE, second))
+    store = TleCatalogStore(tmp_path / "tle", remote_catalog=remote)
+    application = build_application(tle_catalog_store=store)
+    client = TestClient(create_app(application))
+
+    before = client.get("/api/tle/downloaded")
+    assert before.status_code == 200
+    assert before.json() == {"available": False, "satellites": []}
+
+    refreshed = client.post("/api/tle/download")
+    assert refreshed.status_code == 200
+    assert refreshed.json()["catalog_id"] == "norad_tle.txt"
+    assert refreshed.json()["satellites"] == ["TEST SATELLITE", "SECOND SATELLITE"]
+    assert remote.groups == ["geo"]
+    assert store.downloaded_path.exists()
+
+    later = client.get("/api/tle/downloaded")
+    assert later.status_code == 200
+    assert later.json()["available"] is True
+    assert later.json()["count"] == 2
+
+
+def test_web_uploads_multi_satellite_catalog_keeps_copy_and_generates(
+    tmp_path: Path,
+) -> None:
+    second = TleData(
+        name="SECOND SATELLITE",
+        line1="1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753",
+        line2="2 00005  34.2682 331.5174 1849677 331.7664  19.3264 10.82419157413667",
+    )
+    text = TLE.to_three_line_string() + "\n" + second.to_three_line_string() + "\n"
+    store = TleCatalogStore(tmp_path / "tle")
+    application = build_application(tle_catalog_store=store)
+    client = TestClient(create_app(application))
+
+    uploaded = client.post(
+        "/api/tle/upload",
+        files={"catalog_file": ("my_catalog.txt", text, "text/plain")},
+    )
+    assert uploaded.status_code == 200
+    payload = uploaded.json()
+    assert payload["satellites"] == ["TEST SATELLITE", "SECOND SATELLITE"]
+    assert (store.directory / payload["catalog_id"]).exists()
+
+    form = base_form("satellite", "track")
+    form.update(
+        tle_source="upload",
+        tle_catalog_id=payload["catalog_id"],
+        satellite_name="SECOND SATELLITE",
+        refraction_frequency_ghz="22",
+        refraction_altitude_m="650",
+    )
+    response = client.post("/generate", data=form)
+    assert response.status_code == 200
+    assert response.headers["x-artools-point-count"] == "3"
+
+
+def test_web_can_generate_from_saved_downloaded_catalog(tmp_path: Path) -> None:
+    remote = GroupCatalog((TLE,))
+    store = TleCatalogStore(tmp_path / "tle", remote_catalog=remote)
+    store.refresh_downloaded()
+    application = build_application(tle_catalog_store=store)
+    client = TestClient(create_app(application))
+    form = base_form("satellite", "track")
+    form.update(
+        tle_source="download",
+        satellite_name="TEST SATELLITE",
+        refraction_frequency_ghz="22",
+        refraction_altitude_m="650",
+    )
+
+    response = client.post("/generate", data=form)
+    assert response.status_code == 200
+    assert response.headers["x-artools-point-count"] == "3"
+
+
+def test_web_open_tle_folder_uses_application_data_directory(tmp_path: Path) -> None:
+    opened = []
+    store = TleCatalogStore(tmp_path / "tle")
+    application = build_application(tle_catalog_store=store)
+    client = TestClient(create_app(application, open_directory=opened.append))
+
+    response = client.post("/api/tle/open-folder")
+
+    assert response.status_code == 200
+    assert opened == [store.directory]
+    assert store.directory.is_dir()
+
+
+def test_packaged_javascript_contains_satellite_catalog_workflow() -> None:
+    script = (Path(__file__).parents[2] / "src" / "artools" / "web_assets" / "artools.js").read_text()
+
+    assert "/api/tle/downloaded" in script
+    assert "/api/tle/download" in script
+    assert "/api/tle/upload" in script
+    assert "/api/tle/open-folder" in script
+    assert "renderSatelliteSuggestions" in script
+    assert 'downloadButton.textContent = satelliteState.download.loaded ? "Refresh" : "Download"' in script

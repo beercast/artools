@@ -4,32 +4,38 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_docs_directory_contains_only_current_markdown_documents() -> None:
-    markdown_files = {path.name for path in (ROOT / "docs").glob("*.md")}
-    assert markdown_files == {"user.md", "developer.md"}
+def test_readme_is_the_single_current_markdown_documentation_entry_point() -> None:
+    assert (ROOT / "README.md").is_file()
+    assert not (ROOT / "docs").exists()
 
 
-def test_readme_links_to_user_and_developer_documentation() -> None:
+def test_readme_contains_functional_cli_and_development_sections() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "[User documentation](docs/user.md)" in readme
-    assert "[Developer documentation](docs/developer.md)" in readme
-
-
-def test_readme_stops_before_detailed_installation_and_cli_reference() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "### Installation details" not in readme
-    assert "## Command-line interface" not in readme
-
-
-def test_developer_documentation_covers_primary_change_points() -> None:
-    developer = (ROOT / "docs" / "developer.md").read_text(encoding="utf-8")
     for expected in (
-        "generate_tracking_trajectory()",
-        "generate_cross_scan_trajectory()",
-        "generate_raster_map_trajectory()",
-        "AuxiliaryTelescopeTrajectoryWriter",
-        "Legacy notebook mapping",
-        "SimbadSourceCatalog",
-        "SourceFavoritesStore",
+        "## Functional overview",
+        "### Astronomical source",
+        "### Solar System body",
+        "### Satellite",
+        "## Command-line interface",
+        "## Development",
+        "### Development installation",
+        "### Checking compatibility with the legacy version",
     ):
-        assert expected in developer
+        assert expected in readme
+
+
+def test_readme_covers_primary_change_points_and_satellite_catalog_workflow() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    for expected in (
+        "tracking.py",
+        "cross_scan.py",
+        "raster_map.py",
+        "AuxiliaryTelescopeTrajectoryWriter",
+        "TleCatalogStore",
+        "Download fresh TLE",
+        "Upload catalog file",
+        "Paste TLE manually",
+        "--download-tle --satellite NAME",
+        "--tle-file PATH --satellite NAME",
+    ):
+        assert expected in readme

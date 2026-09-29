@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 import math
+import os
+from pathlib import Path
+import sys
 from typing import Callable, Protocol
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -26,6 +29,12 @@ from .tracking import generate_tracking_trajectory
 
 CELESTRAK_GP_ENDPOINT = "https://celestrak.org/NORAD/elements/gp.php"
 """Current CelesTrak GP query endpoint used by the optional catalog adapter."""
+
+CELESTRAK_LEGACY_GROUP = "geo"
+"""CelesTrak group used by the legacy ARTools TLE download workflow."""
+
+DOWNLOADED_TLE_FILENAME = "norad_tle.txt"
+"""Filename used for the locally cached CelesTrak GEO catalog."""
 
 
 class SatelliteDependencyError(RuntimeError):
@@ -505,6 +514,164 @@ def parse_tle_catalog(text: str) -> tuple[TleData, ...]:
     )
 
 
+def serialize_tle_catalog(records: tuple[TleData, ...]) -> str:
+    """Serialize named TLE records using the three-line catalog format."""
+    return "".join(record.to_three_line_string() + "\n" for record in records)
+
+
+def find_tle_in_catalog(records: tuple[TleData, ...], name: str) -> TleData:
+    """Return one case-insensitive exact satellite-name match from a catalog."""
+    if not isinstance(name, str):
+        raise TypeError("Satellite name must be a string")
+    cleaned = name.strip()
+    if not cleaned:
+        raise ValueError("Satellite name must not be empty")
+    matches = [record for record in records if record.name.casefold() == cleaned.casefold()]
+    if not matches:
+        raise SatelliteNotFoundError(f"Satellite not found in TLE catalog: {cleaned}")
+    if len(matches) > 1:
+        raise TleCatalogError(f"TLE catalog contains duplicate satellite name: {cleaned}")
+    return matches[0]
+
+
+def default_tle_catalog_directory() -> Path:
+    """Return the platform-appropriate ARTools directory for persistent TLE catalogs."""
+    override = os.environ.get("ARTOOLS_DATA_DIR")
+    if override:
+        return Path(override).expanduser() / "tle"
+
+    home = Path.home()
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local"))
+        return base / "ARTools" / "tle"
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "ARTools" / "tle"
+
+    base = Path(os.environ.get("XDG_DATA_HOME", home / ".local" / "share"))
+    return base / "artools" / "tle"
+
+
+class TleCatalogStore:
+    """Persist downloaded/imported TLE catalogs and select satellites from them."""
+
+    def __init__(
+        self,
+        directory: str | Path | None = None,
+        remote_catalog: CelesTrakTleCatalog | None = None,
+    ) -> None:
+        self.directory = (
+            Path(directory).expanduser()
+            if directory is not None
+            else default_tle_catalog_directory()
+        )
+        self._remote_catalog = remote_catalog or CelesTrakTleCatalog()
+
+    @property
+    def downloaded_path(self) -> Path:
+        """Return the persistent path of the legacy-compatible downloaded catalog."""
+        return self.directory / DOWNLOADED_TLE_FILENAME
+
+    def downloaded_exists(self) -> bool:
+        """Return whether a previously downloaded catalog is available."""
+        return self.downloaded_path.is_file()
+
+    def load_downloaded(self) -> tuple[TleData, ...]:
+        """Load the persistent downloaded catalog without contacting the network."""
+        if not self.downloaded_exists():
+            return ()
+        return self._read_catalog(self.downloaded_path)
+
+    def refresh_downloaded(self) -> tuple[TleData, ...]:
+        """Download the legacy GEO group, save it locally, and return its records."""
+        records = self._remote_catalog.download_group(CELESTRAK_LEGACY_GROUP)
+        if not records:
+            raise TleCatalogError(
+                f"CelesTrak returned no TLE records for group: {CELESTRAK_LEGACY_GROUP}"
+            )
+        self._write_catalog(self.downloaded_path, records)
+        return records
+
+    def import_catalog(self, filename: str, text: str) -> tuple[str, tuple[TleData, ...]]:
+        """Validate an uploaded catalog, keep a local copy, and return its identifier."""
+        records = parse_tle_catalog(text)
+        if not records:
+            raise TleFormatError("TLE catalog is empty")
+        stored_name = self._safe_uploaded_name(filename)
+        path = self.directory / stored_name
+        self._write_catalog(path, records)
+        return stored_name, records
+
+    def load_stored(self, catalog_id: str) -> tuple[TleData, ...]:
+        """Load a catalog previously stored in the ARTools TLE directory."""
+        path = self._stored_path(catalog_id)
+        return self._read_catalog(path)
+
+    def find_stored(self, catalog_id: str, name: str) -> TleData:
+        """Select one satellite from a persistent downloaded or uploaded catalog."""
+        return find_tle_in_catalog(self.load_stored(catalog_id), name)
+
+    def find_downloaded(self, name: str) -> TleData:
+        """Select one satellite from the persistent CelesTrak GEO catalog."""
+        if not self.downloaded_exists():
+            raise TleCatalogError(
+                "No downloaded TLE catalog is available. Download it first."
+            )
+        return find_tle_in_catalog(self.load_downloaded(), name)
+
+    def _read_catalog(self, path: Path) -> tuple[TleData, ...]:
+        try:
+            text = path.read_text(encoding="ascii")
+        except (OSError, UnicodeError) as error:
+            raise TleCatalogError(f"Could not read TLE catalog: {path}") from error
+        try:
+            records = parse_tle_catalog(text)
+        except TleFormatError as error:
+            raise TleCatalogError(f"Invalid TLE catalog: {path}") from error
+        if not records:
+            raise TleCatalogError(f"TLE catalog is empty: {path}")
+        return records
+
+    def _write_catalog(self, path: Path, records: tuple[TleData, ...]) -> None:
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(path.name + ".tmp")
+            temporary.write_text(serialize_tle_catalog(records), encoding="ascii")
+            temporary.replace(path)
+        except OSError as error:
+            raise TleCatalogError(f"Could not write TLE catalog: {path}") from error
+
+    def _stored_path(self, catalog_id: str) -> Path:
+        if not isinstance(catalog_id, str):
+            raise TypeError("TLE catalog identifier must be a string")
+        cleaned = catalog_id.strip()
+        if not cleaned or Path(cleaned).name != cleaned:
+            raise TleCatalogError("Invalid stored TLE catalog identifier")
+        path = self.directory / cleaned
+        if not path.is_file():
+            raise TleCatalogError(f"Stored TLE catalog not found: {cleaned}")
+        return path
+
+    def _safe_uploaded_name(self, filename: str) -> str:
+        candidate = Path(filename or "uploaded_tle.txt").name.strip() or "uploaded_tle.txt"
+        candidate = "".join(
+            character if character.isalnum() or character in "._- ()" else "_"
+            for character in candidate
+        ).strip()
+        if not candidate:
+            candidate = "uploaded_tle.txt"
+        if candidate.casefold() == DOWNLOADED_TLE_FILENAME.casefold():
+            candidate = f"uploaded_{candidate}"
+
+        stem = Path(candidate).stem or "uploaded_tle"
+        suffix = Path(candidate).suffix or ".txt"
+        result = f"{stem}{suffix}"
+        counter = 2
+        while (self.directory / result).exists():
+            result = f"{stem}_{counter}{suffix}"
+            counter += 1
+        return result
+
+
 def _download_text(url: str) -> str:
     """Download UTF-8 text for the live catalog adapter."""
     with urlopen(url, timeout=15.0) as response:  # noqa: S310 - fixed HTTPS default
@@ -528,6 +695,8 @@ def create_default_satellite_raster_map_service() -> SatelliteRasterMapService:
 
 __all__ = [
     "CELESTRAK_GP_ENDPOINT",
+    "CELESTRAK_LEGACY_GROUP",
+    "DOWNLOADED_TLE_FILENAME",
     "CelesTrakTleCatalog",
     "PycrafSatellitePositionCalculator",
     "PycrafSatelliteRefractionCalculator",
@@ -544,11 +713,15 @@ __all__ = [
     "SatelliteTrackingService",
     "TleCatalog",
     "TleCatalogError",
+    "TleCatalogStore",
     "TleData",
     "TleFormatError",
     "create_default_satellite_cross_scan_service",
     "create_default_satellite_raster_map_service",
     "create_default_satellite_tracking_service",
+    "default_tle_catalog_directory",
+    "find_tle_in_catalog",
     "normalize_satellite_azimuth_deg",
     "parse_tle_catalog",
+    "serialize_tle_catalog",
 ]

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+import os
+import subprocess
+import sys
+from typing import Callable, Mapping
 
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
@@ -12,7 +15,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import UploadFile
 
-from .application import ApplicationError, TrajectoryApplicationService, TrajectoryGenerationRequest
+from .application import (
+    ApplicationError,
+    TrajectoryApplicationService,
+    TrajectoryGenerationRequest,
+)
 from .astronomical import (
     AstronomicalSourceNotFoundError,
     AstronomicalSourceResolutionError,
@@ -36,7 +43,6 @@ from .satellite import (
     SatelliteRefractionParameters,
     SatelliteTarget,
     TleCatalogError,
-    TleData,
     TleFormatError,
 )
 from .solar_system import (
@@ -66,6 +72,7 @@ def create_app(
     writer: AuxiliaryTelescopeTrajectoryWriter | None = None,
     simbad_catalog: SimbadSourceCatalog | None = None,
     favorites: SourceFavoritesStore | None = None,
+    open_directory: Callable[[Path], None] | None = None,
 ) -> FastAPI:
     """Create the local ARTools FastAPI application.
 
@@ -78,6 +85,7 @@ def create_app(
     trajectory_writer = writer or AuxiliaryTelescopeTrajectoryWriter()
     source_catalog = simbad_catalog or SimbadSourceCatalog()
     favorites_store = favorites or SourceFavoritesStore()
+    directory_opener = open_directory or _open_directory
     app = FastAPI(title="ARTools", docs_url=None, redoc_url=None)
     assets = Path(__file__).with_name("web_assets")
     app.mount("/static", StaticFiles(directory=assets), name="static")
@@ -157,6 +165,80 @@ def create_app(
         except (PreferencesError, ValueError) as error:
             return JSONResponse({"detail": str(error)}, status_code=400)
         return JSONResponse({"favorites": list(updated)})
+
+    @app.get("/api/tle/downloaded")
+    def downloaded_tle_catalog() -> JSONResponse:
+        try:
+            records = service.downloaded_tle_catalog()
+        except _USER_FACING_ERRORS as error:
+            return JSONResponse({"detail": str(error)}, status_code=400)
+        if not records:
+            return JSONResponse({"available": False, "satellites": []})
+        return JSONResponse(
+            {
+                "available": True,
+                "catalog_id": "norad_tle.txt",
+                "filename": "norad_tle.txt",
+                "count": len(records),
+                "satellites": [record.name for record in records],
+            }
+        )
+
+    @app.post("/api/tle/download")
+    async def download_tle_catalog() -> JSONResponse:
+        try:
+            records = await run_in_threadpool(service.refresh_downloaded_tle_catalog)
+        except _USER_FACING_ERRORS as error:
+            return JSONResponse({"detail": str(error)}, status_code=502)
+        return JSONResponse(
+            {
+                "available": True,
+                "catalog_id": "norad_tle.txt",
+                "filename": "norad_tle.txt",
+                "count": len(records),
+                "satellites": [record.name for record in records],
+            }
+        )
+
+    @app.post("/api/tle/upload")
+    async def upload_tle_catalog(request: Request) -> JSONResponse:
+        form = await request.form()
+        upload = form.get("catalog_file")
+        if not isinstance(upload, UploadFile) or not upload.filename:
+            return JSONResponse({"detail": "Choose a TLE catalog file"}, status_code=400)
+        try:
+            text = (await upload.read()).decode("ascii")
+        except UnicodeDecodeError:
+            return JSONResponse(
+                {"detail": "Uploaded TLE catalog must contain ASCII text"},
+                status_code=400,
+            )
+        try:
+            catalog_id, records = await run_in_threadpool(
+                service.import_tle_catalog, upload.filename, text
+            )
+        except _USER_FACING_ERRORS as error:
+            return JSONResponse({"detail": str(error)}, status_code=400)
+        return JSONResponse(
+            {
+                "available": True,
+                "catalog_id": catalog_id,
+                "filename": catalog_id,
+                "count": len(records),
+                "satellites": [record.name for record in records],
+            }
+        )
+
+    @app.post("/api/tle/open-folder")
+    async def open_tle_folder() -> JSONResponse:
+        try:
+            service.tle_catalog_directory.mkdir(parents=True, exist_ok=True)
+            await run_in_threadpool(directory_opener, service.tle_catalog_directory)
+        except OSError as error:
+            return JSONResponse(
+                {"detail": f"Could not open TLE folder: {error}"}, status_code=500
+            )
+        return JSONResponse({"opened": True})
 
     @app.post("/generate")
     async def generate(request: Request) -> Response:
@@ -309,18 +391,39 @@ def _satellite_target(
     uploaded_tle_text: str | None,
     application: TrajectoryApplicationService,
 ) -> SatelliteTarget:
+    source = _value(values, "tle_source").strip()
+
+    if source == "paste":
+        return application.satellite_target_from_tle_text(
+            _required(values, "tle_text", "Named TLE")
+        )
+
+    if source in {"download", "upload"}:
+        satellite_name = _required(values, "satellite_name", "Satellite")
+        if source == "download":
+            return application.satellite_target_from_downloaded_catalog(satellite_name)
+        catalog_id = _required(values, "tle_catalog_id", "Uploaded TLE catalog")
+        return application.satellite_target_from_stored_catalog(
+            catalog_id, satellite_name
+        )
+
+    # Backwards-compatible handling for older callers/tests that submit the
+    # pre-catalog satellite form fields directly.
     pasted = _value(values, "tle_text").strip()
     catalog_name = _value(values, "catalog_name").strip()
-    choices = [bool(pasted), bool(uploaded_tle_text and uploaded_tle_text.strip()), bool(catalog_name)]
+    choices = [
+        bool(pasted),
+        bool(uploaded_tle_text and uploaded_tle_text.strip()),
+        bool(catalog_name),
+    ]
     if sum(choices) != 1:
         raise WebInputError(
-            "Provide exactly one satellite source: pasted TLE, uploaded TLE file, "
-            "or CelesTrak name"
+            "Choose one TLE source: downloaded catalog, uploaded catalog, or pasted TLE"
         )
     if pasted:
-        return SatelliteTarget(TleData.from_three_line_string(pasted))
+        return application.satellite_target_from_tle_text(pasted)
     if uploaded_tle_text and uploaded_tle_text.strip():
-        return SatelliteTarget(TleData.from_three_line_string(uploaded_tle_text))
+        return application.satellite_target_from_tle_text(uploaded_tle_text)
     return application.satellite_target_from_catalog(catalog_name)
 
 
@@ -410,6 +513,22 @@ def _int(values: Mapping[str, str], key: str, label: str) -> int:
 
 def _checkbox(values: Mapping[str, str], key: str) -> bool:
     return _value(values, key).strip().casefold() in {"1", "true", "on", "yes"}
+
+
+def _open_directory(path: Path) -> None:
+    """Open a local directory in the platform file manager."""
+    if sys.platform == "win32":
+        os.startfile(path)  # type: ignore[attr-defined]
+        return
+    command = ["open", str(path)] if sys.platform == "darwin" else ["xdg-open", str(path)]
+    try:
+        subprocess.Popen(  # noqa: S603 - fixed local file-manager command
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as error:
+        raise OSError(f"No file manager command is available for {path}") from error
 
 
 _USER_FACING_ERRORS = (
