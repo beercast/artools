@@ -27,6 +27,7 @@ from artools import (
     SatelliteTrackingService,
     TargetFamily,
     TleCatalogError,
+    TleCatalogStore,
     TleData,
     TleFormatError,
     TrajectoryMode,
@@ -125,6 +126,59 @@ def test_parse_tle_catalog_parses_complete_records() -> None:
     with pytest.raises(TleFormatError, match="complete"):
         parse_tle_catalog(first.to_three_line_string() + "\nEXTRA")
 
+
+
+
+def test_tle_catalog_store_persists_downloads_imports_and_selects(tmp_path: Path) -> None:
+    first = _frozen_tle()
+    second = TleData(
+        "SECOND SATELLITE",
+        "1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753",
+        "2 00005  34.2682 331.5174 1849677 331.7664  19.3264 10.82419157413667",
+    )
+
+    class RemoteCatalog:
+        def __init__(self):
+            self.groups = []
+
+        def download_group(self, group: str = "geo"):
+            self.groups.append(group)
+            return (first, second)
+
+    remote = RemoteCatalog()
+    store = TleCatalogStore(tmp_path / "tle", remote_catalog=remote)
+
+    assert store.load_downloaded() == ()
+    assert store.refresh_downloaded() == (first, second)
+    assert remote.groups == ["geo"]
+    assert store.downloaded_path.exists()
+    assert store.find_downloaded("second satellite") == second
+
+    catalog_id, records = store.import_catalog(
+        "manual catalog.txt", first.to_three_line_string() + "\n"
+    )
+    assert records == (first,)
+    assert (store.directory / catalog_id).exists()
+    assert store.find_stored(catalog_id, first.name) == first
+
+
+def test_tle_catalog_store_does_not_overwrite_downloaded_file_on_upload(
+    tmp_path: Path,
+) -> None:
+    tle = _frozen_tle()
+
+    class RemoteCatalog:
+        def download_group(self, group: str = "geo"):
+            return (tle,)
+
+    store = TleCatalogStore(tmp_path / "tle", remote_catalog=RemoteCatalog())
+    store.refresh_downloaded()
+    catalog_id, _ = store.import_catalog(
+        "norad_tle.txt", tle.to_three_line_string() + "\n"
+    )
+
+    assert catalog_id != "norad_tle.txt"
+    assert store.downloaded_path.exists()
 
 def test_satellite_azimuth_normalization_matches_legacy_signed_behavior() -> None:
     assert normalize_satellite_azimuth_deg(-165.5) == pytest.approx(194.5)

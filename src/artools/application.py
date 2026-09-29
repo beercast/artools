@@ -34,7 +34,10 @@ from .satellite import (
     SatelliteTarget,
     SatelliteTrackingService,
     TleCatalog,
+    TleCatalogStore,
     TleData,
+    find_tle_in_catalog,
+    parse_tle_catalog,
     create_default_satellite_cross_scan_service,
     create_default_satellite_raster_map_service,
     create_default_satellite_tracking_service,
@@ -165,6 +168,7 @@ class TrajectoryApplicationService:
         satellite_raster_map: SatelliteRasterMapService | None = None,
         writer: AuxiliaryTelescopeTrajectoryWriter | None = None,
         tle_catalog: TleCatalog | None = None,
+        tle_catalog_store: TleCatalogStore | None = None,
     ) -> None:
         self._astronomical_tracking = (
             astronomical_tracking or create_default_astronomical_tracking_service()
@@ -199,6 +203,7 @@ class TrajectoryApplicationService:
         )
         self._writer = writer or AuxiliaryTelescopeTrajectoryWriter()
         self._tle_catalog = tle_catalog
+        self._tle_catalog_store = tle_catalog_store or TleCatalogStore()
 
     def generate_trajectory(self, request: TrajectoryGenerationRequest) -> Trajectory:
         """Generate one trajectory through the target-family core services."""
@@ -302,17 +307,75 @@ class TrajectoryApplicationService:
         self._writer.write(path, trajectory)
         return TrajectoryFileResult(output_path=path, trajectory=trajectory)
 
-    def satellite_target_from_tle_file(self, path: str | Path) -> SatelliteTarget:
-        """Load one named three-line TLE file for an offline satellite request."""
+    @property
+    def tle_catalog_directory(self) -> Path:
+        """Directory used for persistent downloaded and uploaded TLE catalogs."""
+        return self._tle_catalog_store.directory
+
+    def downloaded_tle_catalog(self) -> tuple[TleData, ...]:
+        """Load the saved CelesTrak GEO catalog without accessing the network."""
+        return self._tle_catalog_store.load_downloaded()
+
+    def refresh_downloaded_tle_catalog(self) -> tuple[TleData, ...]:
+        """Download the legacy CelesTrak GEO group and replace the saved copy."""
+        return self._tle_catalog_store.refresh_downloaded()
+
+    def import_tle_catalog(
+        self, filename: str, text: str
+    ) -> tuple[str, tuple[TleData, ...]]:
+        """Validate an uploaded multi-satellite catalog and keep a local copy."""
+        return self._tle_catalog_store.import_catalog(filename, text)
+
+    def satellite_target_from_stored_catalog(
+        self, catalog_id: str, name: str
+    ) -> SatelliteTarget:
+        """Select one satellite from a catalog stored by ARTools."""
+        return SatelliteTarget(self._tle_catalog_store.find_stored(catalog_id, name))
+
+    def satellite_target_from_downloaded_catalog(self, name: str) -> SatelliteTarget:
+        """Select one satellite from the saved CelesTrak GEO catalog."""
+        return SatelliteTarget(self._tle_catalog_store.find_downloaded(name))
+
+    def satellite_target_from_tle_catalog_file(
+        self, path: str | Path, name: str | None = None
+    ) -> SatelliteTarget:
+        """Select a satellite from a local catalog file.
+
+        A single-record file remains accepted without ``name`` for compatibility
+        with earlier ARTools CLI usage. Multi-satellite catalogs require an
+        explicit satellite name.
+        """
         tle_path = Path(path).expanduser()
         try:
             text = tle_path.read_text(encoding="ascii")
         except (OSError, UnicodeError) as error:
             raise ApplicationError(f"Cannot read TLE file: {tle_path}") from error
+        records = parse_tle_catalog(text)
+        if not records:
+            raise ApplicationError(f"TLE catalog is empty: {tle_path}")
+        if name is None or not name.strip():
+            if len(records) != 1:
+                raise ApplicationError(
+                    "A satellite name is required when the TLE file contains "
+                    "more than one satellite"
+                )
+            return SatelliteTarget(records[0])
+        return SatelliteTarget(find_tle_in_catalog(records, name))
+
+    def satellite_target_from_tle_file(self, path: str | Path) -> SatelliteTarget:
+        """Load one named three-line TLE file for backwards-compatible callers."""
+        return self.satellite_target_from_tle_catalog_file(path)
+
+    def satellite_target_from_tle_text(self, text: str) -> SatelliteTarget:
+        """Build a satellite target from one pasted named three-line TLE."""
         return SatelliteTarget(TleData.from_three_line_string(text))
 
     def satellite_target_from_catalog(self, name: str) -> SatelliteTarget:
-        """Resolve one satellite through the configured live TLE catalog."""
+        """Resolve one satellite through the configured live TLE catalog.
+
+        This method is kept for backwards-compatible Python callers. New GUI and
+        CLI workflows download the complete GEO catalog and select from it locally.
+        """
         catalog = self._tle_catalog or CelesTrakTleCatalog()
         return SatelliteTarget(catalog.find(name))
 

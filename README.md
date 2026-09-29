@@ -359,63 +359,72 @@ format.
 
 #### Main flow
 
-For a satellite, ARTools needs orbital data before it can calculate the target
-position.
+For a satellite, ARTools needs TLE orbital data before it can calculate the
+target position.
 
-Trajectory generation has four main steps:
+The web interface offers three mutually exclusive TLE sources:
 
-1. **Provide the satellite orbital data.** In the web interface, the user provides
-   exactly one satellite source: a pasted named TLE, an uploaded TLE file, or a
-   CelesTrak satellite name.
-2. **Obtain the TLE when necessary.** If a CelesTrak name is used, ARTools queries
-   the remote CelesTrak service and downloads the corresponding TLE. If a TLE is
-   pasted or uploaded, this network step is not needed.
-3. **Calculate the satellite position at SRT.** ARTools uses Pycraf to propagate
-   the orbit and calculate the satellite azimuth and elevation as seen from SRT
-   at each required UTC time.
-4. **Generate the trajectory.** ARTools applies tracking, cross scan or raster map
-   and produces the same time-tagged azimuth/elevation trajectory described in
-   the [Astronomical source section](#astronomical-source).
+1. **Download fresh TLE.** ARTools downloads the same CelesTrak `geo` catalog
+   used by the legacy software and saves it in the ARTools user-data directory.
+   If a saved catalog already exists, it is loaded automatically and the button
+   is shown as `Refresh` instead of `Download`.
+2. **Upload catalog file.** The user selects a local file containing one or more
+   named TLE records. ARTools validates it and keeps a copy in its TLE data
+   directory. Uploaded catalogs are not loaded automatically on the next start.
+3. **Paste TLE manually.** The user pastes one named three-line TLE directly.
+
+For the downloaded and uploaded catalog modes, ARTools reads all satellites in
+the file and shows a searchable satellite selector. The user can type part of a
+name to filter the list and then select the required satellite.
+
+After one satellite has been selected, trajectory generation has the same two
+remaining steps as before:
+
+1. **Calculate the satellite position at SRT.** ARTools uses Pycraf/SGP4 to
+   calculate azimuth and elevation at each required UTC time.
+2. **Generate the trajectory.** ARTools applies tracking, cross scan or raster
+   map and produces the same time-tagged azimuth/elevation trajectory described
+   in the [Astronomical source section](#astronomical-source).
 
 In compact form:
 
 ```text
-pasted/uploaded TLE -------------------+
-                                       |
-CelesTrak name -> CelesTrak -> TLE ----+
-                                       |
-                                       v
-                              Pycraf / SGP4
-                                       |
-                                       v
-                         Azimuth / Elevation at SRT
-                                       |
-                                       v
-                       Tracking / Cross scan / Raster map
-                                       |
-                                       v
-                       Auxiliary Telescope trajectory file
+Download CelesTrak GEO catalog --+
+                                 |
+Upload local TLE catalog --------+--> select satellite
+                                 |          |
+Paste one named TLE -------------+          v
+                                      Pycraf / SGP4
+                                           |
+                                           v
+                                Azimuth / Elevation at SRT
+                                           |
+                                           v
+                              Tracking / Cross scan / Raster map
+                                           |
+                                           v
+                              Auxiliary Telescope trajectory file
 ```
 
 #### Implementation details
 
 A **TLE** (Two-Line Element Set) describes the orbit of an artificial satellite.
-It does not directly contain the satellite azimuth and elevation. ARTools uses a
-named three-line representation: the satellite name followed by the two TLE
-lines.
+ARTools uses the common named three-line representation: satellite name, TLE
+line 1, and TLE line 2. A catalog is simply a sequence of these three-line
+records.
 
-The web GUI accepts the TLE in three ways:
+The downloaded catalog comes from
+[CelesTrak](https://celestrak.org/), using the `geo` group selected by the legacy
+ARTools code. The complete catalog is saved locally as `norad_tle.txt`. A saved
+downloaded catalog can therefore be used immediately on later runs without a
+new network request; `Refresh` replaces it with a fresh copy.
 
-- paste a named three-line TLE;
-- upload a TLE file;
-- enter a satellite name to retrieve the TLE from
-  [CelesTrak](https://celestrak.org/), an external service that publishes
-  satellite orbital data.
+Uploaded catalogs are also copied into the ARTools TLE data directory, but they
+are deliberately not selected automatically when ARTools is started again. The
+web interface provides an `Open TLE folder` button so the stored files can be
+inspected directly.
 
-Network access is therefore optional. A pasted or uploaded TLE can be used
-offline. The CelesTrak option requires a network connection.
-
-Once the TLE is available, ARTools uses the
+Once a satellite TLE has been selected, ARTools uses the
 [Pycraf satellite library](https://bwinkel.github.io/pycraf/latest/satellite/index.html)
 to calculate the satellite position relative to the SRT observer. Pycraf uses
 the SGP4 orbit propagator and returns horizontal coordinates including azimuth,
@@ -424,8 +433,9 @@ elevation and distance.
 The responsibilities are therefore:
 
 ```text
-Satellite input         -> ARTools GUI
-TLE retrieval           -> CelesTrak, when a CelesTrak name is used
+TLE source selection    -> ARTools GUI
+Catalog download        -> CelesTrak GEO catalog
+Catalog storage/search  -> ARTools core
 Az/El calculation       -> Pycraf / SGP4
 Optional refraction     -> Pycraf
 Trajectory generation   -> ARTools core
@@ -436,9 +446,10 @@ The main ARTools components specific to satellites are in
 [`satellite.py`](src/artools/satellite.py):
 
 - `TleData` stores one named TLE;
-- `SatelliteTarget` represents the satellite target used by ARTools;
-- `CelesTrakTleCatalog` retrieves a TLE from CelesTrak when a catalog name is
-  supplied;
+- `TleCatalogStore` stores downloaded/uploaded catalogs and selects a satellite
+  from them;
+- `CelesTrakTleCatalog` downloads the CelesTrak catalog;
+- `SatelliteTarget` represents the selected satellite;
 - `PycrafSatellitePositionCalculator` calculates the satellite position at SRT;
 - `PycrafSatelliteRefractionCalculator` provides the optional legacy-compatible
   refraction correction.
@@ -465,8 +476,8 @@ TLE -> Pycraf / SGP4 -> base Az / El
 
 Therefore:
 
-- change [`satellite.py`](src/artools/satellite.py) if TLE handling, CelesTrak
-  access, satellite propagation, or satellite refraction must change;
+- change [`satellite.py`](src/artools/satellite.py) if catalog handling,
+  CelesTrak access, satellite propagation, or satellite refraction must change;
 - change [`tracking.py`](src/artools/tracking.py),
   [`cross_scan.py`](src/artools/cross_scan.py), or
   [`raster_map.py`](src/artools/raster_map.py) if the trajectory geometry or
@@ -485,29 +496,10 @@ in the [Astronomical source output section](#output).
 
 #### Using the [command-line interface](#command-line-interface)
 
-The [command-line interface](#command-line-interface) uses the same satellite propagation and trajectory-generation logic as
-the web interface.
-
-The main difference is how the TLE is supplied. The [command-line interface](#command-line-interface) accepts either:
-
-- `--tle-file` for a local named TLE file, without catalog/network access;
-- `--catalog-name` to retrieve the TLE from CelesTrak.
-
-For example:
-
-```bash
-artools satellite track \
-    --catalog-name "EUTELSAT HOTBIRD 13B" \
-    --start 2026-08-31T12:11:00Z \
-    --dt 600 \
-    --points 144 \
-    --output hotbird-track.txt
-```
-
-After the TLE has been obtained, the processing is the same as in the web
-interface: Pycraf calculates the satellite position at SRT, ARTools generates the
-requested trajectory, and the result is serialized in the Auxiliary Telescope
-format.
+The [command-line interface](#command-line-interface) uses the same catalog
+selection and trajectory-generation logic. See the
+[Artificial satellites](#artificial-satellites) subsection for the available TLE
+input modes.
 
 ## Command-line interface
 
@@ -602,17 +594,31 @@ Example:
 
 ### Artificial satellites
 
-A satellite must be supplied either from a local named three-line TLE file:
+The CLI supports the same three TLE sources as the web interface.
+
+To select a satellite from a local catalog containing multiple records:
 
 ```text
---tle-file PATH
+--tle-file PATH --satellite NAME
 ```
 
-or by an explicit live CelesTrak lookup:
+A single-record TLE file is also accepted without `--satellite` for backwards
+compatibility.
+
+To download a fresh copy of the legacy CelesTrak `geo` catalog, save it in the
+ARTools data directory, and select one satellite:
 
 ```text
---catalog-name NAME
+--download-tle --satellite NAME
 ```
+
+To provide one named three-line TLE directly:
+
+```text
+--tle-text TEXT
+```
+
+When `--tle-text` is used from a shell, quoting must preserve the three lines.
 
 Optional legacy-compatible refraction arguments are:
 
@@ -622,12 +628,24 @@ Optional legacy-compatible refraction arguments are:
 --refraction-altitude-m VALUE
 ```
 
-Example:
+Example using a local multi-satellite catalog:
 
 ```bash
-./artools satellite track --tle-file hotbird.tle \
+./artools satellite track \
+    --tle-file norad_tle.txt \
+    --satellite "EUTELSAT HOTBIRD 13C" \
     --start 2026-08-31T12:11:00Z --dt 600 --points 144 \
     --refraction --output hotbird-track.txt
+```
+
+Example downloading fresh TLE data first:
+
+```bash
+./artools satellite track \
+    --download-tle \
+    --satellite "EUTELSAT HOTBIRD 13C" \
+    --start 2026-08-31T12:11:00Z --dt 600 --points 144 \
+    --output hotbird-track.txt
 ```
 
 ## Development

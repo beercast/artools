@@ -110,15 +110,36 @@ def _add_target_arguments(
         )
         return
 
+    parser.add_argument(
+        "--satellite",
+        help=(
+            "Satellite name to select from a multi-satellite TLE catalog. "
+            "Required with --download-tle and with multi-record --tle-file inputs."
+        ),
+    )
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument(
         "--tle-file",
         type=Path,
-        help="Named three-line TLE file. No catalog/network access is used.",
+        help=(
+            "Local TLE catalog file. Use --satellite to select a record when the "
+            "file contains more than one satellite."
+        ),
     )
     target.add_argument(
-        "--catalog-name",
-        help="Satellite name to resolve through the live CelesTrak catalog.",
+        "--download-tle",
+        action="store_true",
+        help=(
+            "Download the fresh CelesTrak GEO catalog, save it in the ARTools data "
+            "directory, and select --satellite from it."
+        ),
+    )
+    target.add_argument(
+        "--tle-text",
+        help=(
+            "One complete named three-line TLE supplied directly as text. "
+            "Shell quoting must preserve the embedded newlines."
+        ),
     )
 
 
@@ -251,9 +272,18 @@ def request_from_namespace(
         )
 
     if namespace.tle_file is not None:
-        target = application.satellite_target_from_tle_file(namespace.tle_file)
+        target = application.satellite_target_from_tle_catalog_file(
+            namespace.tle_file, namespace.satellite
+        )
+    elif namespace.download_tle:
+        if not namespace.satellite:
+            raise CliError("--satellite is required with --download-tle")
+        application.refresh_downloaded_tle_catalog()
+        target = application.satellite_target_from_downloaded_catalog(
+            namespace.satellite
+        )
     else:
-        target = application.satellite_target_from_catalog(namespace.catalog_name)
+        target = application.satellite_target_from_tle_text(namespace.tle_text)
     return TrajectoryGenerationRequest(
         target=target,
         parameters=parameters,

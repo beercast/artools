@@ -180,18 +180,52 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
         chunks.append(_atmosphere_fields())
     else:
         chunks.append('''
-          <div class="target-grid">
-            <div class="field-label">Satellite TLE source</div>
-            <p class="hint">Provide exactly one: paste a named three-line TLE, upload a TLE file, or enter a CelesTrak satellite name.</p>
-            <div class="grid satellite-grid">
-              <label><span>Paste named TLE</span>
-                <textarea name="tle_text" rows="5" placeholder="SATELLITE NAME&#10;1 ...&#10;2 ..."></textarea>
-              </label>
-              <label><span>Upload TLE file</span>
-                <input name="tle_file" type="file" accept=".tle,.txt,text/plain">
-              </label>
-              <label><span>CelesTrak name</span>
-                <input name="catalog_name" type="text" placeholder="EUTELSAT HOTBIRD 13B" autocomplete="off">
+          <div class="target-grid satellite-target-grid">
+            <label class="tle-source-select"><span>TLE source</span>
+              <select name="tle_source" id="tle-source">
+                <option value="download">Download fresh TLE</option>
+                <option value="upload">Upload catalog file</option>
+                <option value="paste">Paste TLE manually</option>
+              </select>
+            </label>
+
+            <div class="tle-catalog-row">
+              <div id="tle-download-panel" class="tle-source-panel">
+                <div class="tle-action-row">
+                  <button class="secondary" type="button" id="tle-download-button">Download</button>
+                  <span id="tle-download-check" class="catalog-check" hidden aria-label="TLE catalog ready">✓</span>
+                  <span id="tle-download-status" class="source-message" role="status" aria-live="polite"></span>
+                </div>
+              </div>
+
+              <div id="tle-upload-panel" class="tle-source-panel" hidden>
+                <div class="tle-action-row">
+                  <button class="secondary" type="button" id="tle-upload-button">Upload file</button>
+                  <button class="secondary" type="button" id="tle-open-folder-button">Open TLE folder</button>
+                  <span id="tle-upload-check" class="catalog-check" hidden aria-label="TLE catalog ready">✓</span>
+                  <span id="tle-upload-status" class="source-message" role="status" aria-live="polite"></span>
+                </div>
+                <input id="tle-catalog-file" type="file" accept=".tle,.txt,text/plain" hidden>
+              </div>
+
+              <div id="satellite-catalog-selection" class="satellite-catalog-selection" hidden>
+                <span class="field-label">Satellite</span>
+                <div class="satellite-autocomplete">
+                  <input name="satellite_name" id="satellite-name-input" type="text"
+                    placeholder="Start typing a satellite name" autocomplete="off"
+                    aria-autocomplete="list" aria-controls="satellite-suggestions"
+                    aria-expanded="false">
+                  <input name="tle_catalog_id" id="tle-catalog-id" type="hidden" value="">
+                  <div id="satellite-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
+                </div>
+                <p id="satellite-catalog-hint" class="hint satellite-catalog-hint"></p>
+              </div>
+            </div>
+
+            <div id="tle-paste-panel" class="tle-source-panel" hidden>
+              <label><span>Named TLE</span>
+                <textarea name="tle_text" id="tle-text" rows="5"
+                  placeholder="SATELLITE NAME&#10;1 ...&#10;2 ..."></textarea>
               </label>
             </div>
           </div>
