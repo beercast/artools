@@ -142,7 +142,7 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
         chunks.append('''
           <div class="astronomical-source-grid target-grid">
             <div class="source-search-field">
-              <span class="field-label">SIMBAD source name</span>
+              <span class="field-label">Search SIMBAD source</span>
               <div class="source-input-row">
                 <div class="source-autocomplete">
                   <input name="source" id="simbad-source-input" type="text" required
@@ -164,7 +164,7 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
               </select>
             </label>
           </div>
-          <p class="hint source-hint">Type at least two characters to search SIMBAD.</p>''')
+          <p class="hint source-hint">Remote SIMBAD search. Type at least two characters. Suggestions are limited; continue typing to refine the search, or enter a complete source name directly.</p>''')
         chunks.append(_atmosphere_fields())
     elif family == "solar-system":
         options = "".join(
@@ -181,31 +181,33 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
     else:
         chunks.append('''
           <div class="target-grid satellite-target-grid">
-            <label class="tle-source-select"><span>TLE source</span>
-              <select name="tle_source" id="tle-source">
-                <option value="download">Download fresh TLE</option>
-                <option value="upload">Upload catalog file</option>
-                <option value="paste">Paste TLE manually</option>
-              </select>
-            </label>
+            <div class="tle-catalog-layout">
+              <div class="tle-source-column">
+                <label class="tle-source-select"><span>TLE source</span>
+                  <select name="tle_source" id="tle-source">
+                    <option value="download">Download fresh TLE</option>
+                    <option value="upload">Upload catalog file</option>
+                    <option value="paste">Paste TLE manually</option>
+                  </select>
+                </label>
 
-            <div class="tle-catalog-row">
-              <div id="tle-download-panel" class="tle-source-panel">
-                <div class="tle-action-row">
-                  <button class="secondary" type="button" id="tle-download-button">Download</button>
-                  <span id="tle-download-check" class="catalog-check" hidden aria-label="TLE catalog ready">✓</span>
-                  <span id="tle-download-status" class="source-message" role="status" aria-live="polite"></span>
+                <div id="tle-download-panel" class="tle-source-panel">
+                  <div class="tle-action-row">
+                    <button class="secondary" type="button" id="tle-download-button">Download</button>
+                    <span id="tle-download-check" class="catalog-check" hidden aria-label="TLE catalog ready">✓</span>
+                    <span id="tle-download-status" class="source-message" role="status" aria-live="polite"></span>
+                  </div>
                 </div>
-              </div>
 
-              <div id="tle-upload-panel" class="tle-source-panel" hidden>
-                <div class="tle-action-row">
-                  <button class="secondary" type="button" id="tle-upload-button">Upload file</button>
-                  <button class="secondary" type="button" id="tle-open-folder-button">Open TLE folder</button>
-                  <span id="tle-upload-check" class="catalog-check" hidden aria-label="TLE catalog ready">✓</span>
-                  <span id="tle-upload-status" class="source-message" role="status" aria-live="polite"></span>
+                <div id="tle-upload-panel" class="tle-source-panel" hidden>
+                  <div class="tle-action-row">
+                    <button class="secondary" type="button" id="tle-upload-button">Upload file</button>
+                    <button class="secondary" type="button" id="tle-open-folder-button">Open TLE folder</button>
+                    <span id="tle-upload-check" class="catalog-check" hidden aria-label="TLE catalog ready">✓</span>
+                    <span id="tle-upload-status" class="source-message" role="status" aria-live="polite"></span>
+                  </div>
+                  <input id="tle-catalog-file" type="file" accept=".tle,.txt,text/plain" hidden>
                 </div>
-                <input id="tle-catalog-file" type="file" accept=".tle,.txt,text/plain" hidden>
               </div>
 
               <div id="satellite-catalog-selection" class="satellite-catalog-selection" hidden>
