@@ -302,9 +302,15 @@ def _generate_download(
     request = request_from_web_form(values, uploaded_tle_text, application)
     trajectory = application.generate_trajectory(request)
     serialized = writer.serialize(trajectory).encode("ascii")
+    requested_filename = values.get("output_name", "").strip()
+    filename = (
+        _download_filename(requested_filename)
+        if requested_filename
+        else _default_download_filename(request)
+    )
     return GeneratedDownload(
         content=serialized,
-        filename=_download_filename(values.get("output_name", "trajectory.txt")),
+        filename=filename,
         point_count=len(trajectory),
     )
 
@@ -473,6 +479,42 @@ def _trajectory_mode(value: str) -> TrajectoryMode:
         return mapping[value]
     except KeyError as error:
         raise WebInputError(f"Unsupported trajectory mode: {value!r}") from error
+
+
+def _default_download_filename(request: TrajectoryGenerationRequest) -> str:
+    """Build the default browser filename from target name and start epoch."""
+    target = request.target
+    if isinstance(target, AstronomicalSourceTarget):
+        target_name = target.name
+    elif isinstance(target, SolarSystemBodyTarget):
+        target_name = target.body.value
+    else:
+        target_name = target.tle.name
+
+    safe_name = _filename_component(target_name) or "target"
+    epoch = request.parameters.start_time.strftime("%Y%m%dT%H%M%SZ")
+    return f"{safe_name}_{epoch}.txt"
+
+
+def _filename_component(value: str) -> str:
+    """Return a compact ASCII-safe target name for an automatic filename."""
+    output: list[str] = []
+    underscore_pending = False
+    for char in value.strip():
+        if char.isascii() and char.isalnum():
+            if underscore_pending and output:
+                output.append("_")
+            output.append(char)
+            underscore_pending = False
+        elif char in {"-", "_"}:
+            if underscore_pending and output:
+                output.append("_")
+            output.append(char)
+            underscore_pending = False
+        elif char.isspace():
+            underscore_pending = True
+        # Other punctuation is omitted. This turns e.g. W3(OH) into W3OH.
+    return "".join(output).strip("_-")
 
 
 def _download_filename(value: str) -> str:

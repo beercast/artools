@@ -25,6 +25,65 @@
     return match ? match[1] : "trajectory.txt";
   }
 
+  function automaticFilenameComponent(value) {
+    return (value || "")
+      .trim()
+      .replace(/\s+/g, "_")
+      .replace(/[^A-Za-z0-9_-]/g, "")
+      .replace(/^[_-]+|[_-]+$/g, "");
+  }
+
+  function automaticFilenameEpoch() {
+    const dateInput = document.getElementById("start-date");
+    const timeInput = document.getElementById("start-time");
+    if (!dateInput || !timeInput || !dateInput.value || !timeInput.value) return "";
+    const date = dateInput.value.replace(/-/g, "");
+    const parts = timeInput.value.split(":");
+    if (parts.length < 2) return "";
+    const hour = (parts[0] || "00").padStart(2, "0");
+    const minute = (parts[1] || "00").padStart(2, "0");
+    const second = ((parts[2] || "00").split(".")[0] || "00").padStart(2, "0");
+    return `${date}T${hour}${minute}${second}Z`;
+  }
+
+  function automaticFilenameTarget() {
+    const family = document.getElementById("target-family");
+    if (!family) return "";
+
+    if (family.value === "astronomical") {
+      const input = document.getElementById("simbad-source-input");
+      return input ? input.value.trim() : "";
+    }
+    if (family.value === "solar-system") {
+      const select = document.querySelector('[name="body"]');
+      return select ? select.value.trim() : "";
+    }
+    if (family.value === "satellite") {
+      const source = document.getElementById("tle-source");
+      if (source && source.value === "paste") {
+        const textarea = document.getElementById("tle-text");
+        if (!textarea) return "";
+        const firstLine = textarea.value.split(/\r?\n/).find((line) => line.trim());
+        return firstLine ? firstLine.trim() : "";
+      }
+      const input = document.getElementById("satellite-name-input");
+      return input ? input.value.trim() : "";
+    }
+    return "";
+  }
+
+  function updateAutomaticOutputFilename() {
+    const output = document.getElementById("output-name");
+    if (!output || output.dataset.autoFilename !== "true") return;
+    const target = automaticFilenameComponent(automaticFilenameTarget());
+    const epoch = automaticFilenameEpoch();
+    if (!target || !epoch) {
+      output.value = "trajectory.txt";
+      return;
+    }
+    output.value = `${target}_${epoch}.txt`;
+  }
+
   function setCurrentUtc() {
     const dateInput = document.getElementById("start-date");
     const timeInput = document.getElementById("start-time");
@@ -34,6 +93,7 @@
     const pad = (value) => String(value).padStart(2, "0");
     dateInput.value = `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}`;
     timeInput.value = `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
+    updateAutomaticOutputFilename();
   }
 
   async function jsonRequest(url, options = {}) {
@@ -222,6 +282,7 @@
           sourceStatus("", "");
           clearSuggestions();
           updateFavoriteToggle();
+          updateAutomaticOutputFilename();
         });
         menu.appendChild(option);
       });
@@ -338,6 +399,7 @@
       clearSuggestions();
       sourceStatus("", "");
       updateFavoriteToggle();
+      updateAutomaticOutputFilename();
     });
 
     loadFavorites();
@@ -407,6 +469,7 @@
           input.value = name;
           input.dataset.selectedName = name;
           clearSatelliteSuggestions();
+          updateAutomaticOutputFilename();
         });
         menu.appendChild(option);
       });
@@ -630,6 +693,7 @@
           target.innerHTML = await response.text();
           initAstronomicalSourceControls();
           initSatelliteControls();
+          updateAutomaticOutputFilename();
         }
       } catch (_) {
         // The initial server-rendered fields remain usable if the request fails.
@@ -652,6 +716,18 @@
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         submitTrajectory(form);
+      });
+      form.addEventListener("input", (event) => {
+        if (event.target && event.target.id === "output-name") {
+          event.target.dataset.autoFilename = "false";
+          return;
+        }
+        updateAutomaticOutputFilename();
+      });
+      form.addEventListener("change", (event) => {
+        if (event.target && event.target.id !== "output-name") {
+          updateAutomaticOutputFilename();
+        }
       });
     }
     const currentUtcButton = document.getElementById("use-current-utc");
