@@ -108,7 +108,7 @@ def render_index() -> str:
         <div class="grid output-grid">
           <label>
             <span>Download filename</span>
-            <input name="output_name" type="text" value="trajectory.txt" required autocomplete="off">
+            <input name="output_name" id="output-name" type="text" value="trajectory.txt" required autocomplete="off" data-auto-filename="true">
           </label>
           <div class="action-wrap">
             <button class="primary" type="submit" id="generate-button">

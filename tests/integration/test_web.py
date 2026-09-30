@@ -178,6 +178,8 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     assert 'type="date"' in response.text
     assert 'name="start_time"' in response.text
     assert 'type="time"' in response.text
+    assert 'id="output-name"' in response.text
+    assert 'data-auto-filename="true"' in response.text
     assert 'step="1"' in response.text
     assert "Use current UTC time" in response.text
     assert 'class="start-time-controls"' in response.text
@@ -249,6 +251,49 @@ def test_web_generates_every_target_family_and_mode(
     assert response.headers["content-disposition"] == 'attachment; filename="trajectory.txt"'
     assert response.headers["x-artools-point-count"] == str(expected_points)
     assert len(response.text.splitlines()) == expected_points
+
+
+@pytest.mark.parametrize(
+    ("family", "expected_filename"),
+    [
+        ("astronomical", "TEST_SOURCE_20260831T223000Z.txt"),
+        ("solar-system", "moon_20260831T223000Z.txt"),
+        ("satellite", "TEST_SATELLITE_20260831T223000Z.txt"),
+    ],
+)
+def test_web_builds_default_filename_from_target_and_start_epoch(
+    family: str, expected_filename: str
+) -> None:
+    client = TestClient(create_app(build_application()))
+    form = base_form(family, "track")
+    add_target(form, family)
+    form.pop("output_name")
+
+    response = client.post("/generate", data=form)
+
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="{expected_filename}"'
+    )
+
+
+def test_web_default_filename_removes_punctuation_from_target_name() -> None:
+    application = build_application()
+    application._astronomical_tracking._resolver = MappingAstronomicalSourceResolver(
+        {"W3(OH)": EquatorialCoordinates(10.0, 20.0)}
+    )
+    client = TestClient(create_app(application))
+    form = base_form("astronomical", "track")
+    add_target(form, "astronomical")
+    form["source"] = "W3(OH)"
+    form.pop("output_name")
+
+    response = client.post("/generate", data=form)
+
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="W3OH_20260831T223000Z.txt"'
+    )
 
 
 def test_web_and_cli_outputs_are_byte_equivalent(tmp_path: Path) -> None:
