@@ -11,6 +11,7 @@ import pytest
 from artools import (
     EquatorialCoordinates,
     HorizontalCoordinates,
+    ObserverSite,
     SatellitePosition,
     TleData,
     TrajectoryApplicationService,
@@ -34,8 +35,10 @@ from artools.solar_system import (
     SolarSystemRasterMapService,
     SolarSystemTrackingService,
 )
-from artools.preferences import SourceFavoritesStore
-from artools.webapp import create_app
+from artools.preferences import SavedObservingSiteStore, SourceFavoritesStore
+from artools.sites import SiteCatalogError
+from artools.weather import WeatherConditions
+from artools.webapp import create_app, request_from_web_form
 
 
 UTC = timezone.utc
@@ -80,6 +83,40 @@ class Catalog:
     def find(self, name: str) -> TleData:
         self.names.append(name)
         return TLE
+
+
+class SiteCatalog:
+    def __init__(self) -> None:
+        self.resolved: list[str] = []
+
+    def names(self):
+        return ("ALMA", "Very Large Array")
+
+    def resolve(self, name: str) -> ObserverSite:
+        self.resolved.append(name)
+        if name != "ALMA":
+            raise SiteCatalogError(f"Could not resolve observing site: {name}")
+        return ObserverSite(
+            identifier="astropy_alma",
+            name="ALMA",
+            latitude_deg=-23.029,
+            longitude_deg=-67.755,
+            height_m=5050.0,
+        )
+
+
+class WeatherClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[ObserverSite, datetime]] = []
+
+    def conditions_at(self, site: ObserverSite, timestamp: datetime) -> WeatherConditions:
+        self.calls.append((site, timestamp))
+        return WeatherConditions(
+            temperature_c=-2.5,
+            pressure_hpa=552.4,
+            relative_humidity_percent=18.0,
+            valid_at=timestamp,
+        )
 
 
 class SimbadCatalog:
@@ -190,6 +227,17 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     assert "Remote SIMBAD search" in response.text
     assert "Suggestions are limited" in response.text
     assert "enter a complete source name directly" in response.text
+    assert 'id="site-input"' in response.text
+    assert 'id="site-menu-toggle"' in response.text
+    assert 'id="site-custom-name"' in response.text
+    assert 'id="save-custom-site"' in response.text
+    assert 'id="delete-saved-site"' in response.text
+    assert "Sardinia Radio Telescope (SRT)" in response.text
+    assert 'id="refraction-mode"' in response.text
+    assert '<option value="none" selected>No refraction</option>' in response.text
+    assert 'id="atmospheric-controls"' in response.text
+    assert "Refresh weather" in response.text
+    assert "Open-Meteo" in response.text
 
     css = client.get("/static/artools.css")
     assert css.status_code == 200
@@ -605,6 +653,251 @@ def test_packaged_javascript_sets_current_time_using_utc_components() -> None:
     assert "getUTCMinutes" in script
     assert "getUTCSeconds" in script
     assert 'getElementById("use-current-utc")' in script
+
+
+
+def test_observing_site_endpoint_combines_srt_astropy_and_custom() -> None:
+    catalog = SiteCatalog()
+    client = TestClient(create_app(build_application(), site_catalog=catalog))
+
+    response = client.get("/api/sites")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "sites": [
+            {"source": "srt", "name": "Sardinia Radio Telescope (SRT)"},
+            {"source": "astropy", "name": "ALMA"},
+            {"source": "astropy", "name": "Very Large Array"},
+            {"source": "custom", "name": "Custom site..."},
+        ],
+        "catalog_available": True,
+    }
+
+
+def test_observing_site_endpoint_includes_saved_sites(tmp_path: Path) -> None:
+    saved = SavedObservingSiteStore(tmp_path / "preferences.json")
+    saved.save("Concordia", -75.1, 123.35, 3233.0)
+    client = TestClient(
+        create_app(build_application(), site_catalog=SiteCatalog(), saved_sites=saved)
+    )
+
+    response = client.get("/api/sites")
+
+    assert response.status_code == 200
+    assert {
+        "source": "saved",
+        "name": "Concordia",
+        "latitude_deg": -75.1,
+        "longitude_deg": 123.35,
+        "height_m": 3233.0,
+    } in response.json()["sites"]
+
+
+def test_custom_observing_site_can_be_saved_and_deleted(tmp_path: Path) -> None:
+    saved = SavedObservingSiteStore(tmp_path / "preferences.json")
+    client = TestClient(
+        create_app(build_application(), site_catalog=SiteCatalog(), saved_sites=saved)
+    )
+
+    created = client.post(
+        "/api/sites/custom",
+        json={
+            "name": "Concordia",
+            "latitude_deg": -75.1,
+            "longitude_deg": 123.35,
+            "height_m": 3233.0,
+        },
+    )
+    assert created.status_code == 200
+    assert created.json()["site"]["source"] == "saved"
+    assert saved.resolve("Concordia").height_m == pytest.approx(3233.0)
+
+    deleted = client.delete("/api/sites/custom", params={"name": "Concordia"})
+    assert deleted.status_code == 200
+    assert deleted.json()["sites"] == []
+    assert saved.list() == ()
+
+
+def test_observing_site_endpoint_falls_back_to_srt_and_custom() -> None:
+    class UnavailableCatalog:
+        def names(self):
+            raise SiteCatalogError("catalog unavailable")
+
+        def resolve(self, name: str):
+            raise AssertionError("resolve should not be called")
+
+    client = TestClient(create_app(build_application(), site_catalog=UnavailableCatalog()))
+
+    response = client.get("/api/sites")
+
+    assert response.status_code == 200
+    assert response.json()["catalog_available"] is False
+    assert response.json()["sites"] == [
+        {"source": "srt", "name": "Sardinia Radio Telescope (SRT)"},
+        {"source": "custom", "name": "Custom site..."},
+    ]
+
+
+def test_weather_endpoint_uses_selected_site_and_start_epoch() -> None:
+    catalog = SiteCatalog()
+    weather = WeatherClient()
+    client = TestClient(
+        create_app(build_application(), site_catalog=catalog, weather=weather)
+    )
+
+    response = client.get(
+        "/api/weather",
+        params={
+            "site_source": "astropy",
+            "site_name": "ALMA",
+            "at": "2026-10-05T14:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["temperature_c"] == -2.5
+    assert payload["pressure_hpa"] == 552.4
+    assert payload["relative_humidity_percent"] == 18.0
+    assert payload["source"] == "Open-Meteo"
+    assert payload["site"]["name"] == "ALMA"
+    assert catalog.resolved == ["ALMA"]
+    assert weather.calls[0][1] == datetime(2026, 10, 5, 14, 0, tzinfo=UTC)
+
+
+def test_weather_endpoint_resolves_saved_site(tmp_path: Path) -> None:
+    saved = SavedObservingSiteStore(tmp_path / "preferences.json")
+    saved.save("Concordia", -75.1, 123.35, 3233.0)
+    weather = WeatherClient()
+    client = TestClient(
+        create_app(
+            build_application(),
+            site_catalog=SiteCatalog(),
+            saved_sites=saved,
+            weather=weather,
+        )
+    )
+
+    response = client.get(
+        "/api/weather",
+        params={
+            "site_source": "saved",
+            "site_name": "Concordia",
+            "at": "2026-10-05T14:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+    assert weather.calls[0][0].name == "Concordia"
+    assert weather.calls[0][0].height_m == pytest.approx(3233.0)
+
+
+def test_web_form_resolves_saved_site(tmp_path: Path) -> None:
+    saved = SavedObservingSiteStore(tmp_path / "preferences.json")
+    saved.save("Concordia", -75.1, 123.35, 3233.0)
+    form = base_form("astronomical", "track")
+    form["source"] = "TEST SOURCE"
+    form.update(site_source="saved", site_name="Concordia", refraction_mode="none")
+
+    request = request_from_web_form(
+        form,
+        None,
+        build_application(),
+        site_catalog=SiteCatalog(),
+        saved_sites=saved,
+    )
+
+    assert request.site.name == "Concordia"
+    assert request.site.latitude_deg == pytest.approx(-75.1)
+    assert request.site.longitude_deg == pytest.approx(123.35)
+    assert request.site.height_m == pytest.approx(3233.0)
+
+
+def test_web_form_rejects_unselected_site_text() -> None:
+    form = base_form("astronomical", "track")
+    form["source"] = "TEST SOURCE"
+    form.update(site_source="", refraction_mode="none")
+
+    with pytest.raises(ValueError, match="Choose an observing site"):
+        request_from_web_form(form, None, build_application())
+
+
+def test_web_form_uses_custom_site_and_no_refraction_by_default() -> None:
+    form = base_form("astronomical", "track")
+    form["source"] = "TEST SOURCE"
+    form.update(
+        site_source="custom",
+        site_latitude_deg="-30.5",
+        site_longitude_deg="21.25",
+        site_height_m="1200",
+        refraction_mode="none",
+    )
+
+    request = request_from_web_form(form, None, build_application())
+
+    assert request.site.name == "Custom site"
+    assert request.site.latitude_deg == pytest.approx(-30.5)
+    assert request.site.longitude_deg == pytest.approx(21.25)
+    assert request.site.height_m == pytest.approx(1200.0)
+    assert request.atmosphere is None
+
+
+def test_web_form_builds_common_astropy_atmosphere_from_gui_values() -> None:
+    form = base_form("solar-system", "track")
+    form["body"] = "moon"
+    form.update(
+        refraction_mode="atmospheric",
+        pressure_hpa="932.1",
+        temperature_c="17.4",
+        relative_humidity="48",
+        frequency_ghz="22",
+    )
+
+    request = request_from_web_form(form, None, build_application())
+
+    assert request.atmosphere is not None
+    assert request.atmosphere.pressure_hpa == pytest.approx(932.1)
+    assert request.atmosphere.temperature_c == pytest.approx(17.4)
+    assert request.atmosphere.relative_humidity == pytest.approx(0.48)
+    assert request.atmosphere.wavelength_m == pytest.approx(299_792_458.0 / 22e9)
+
+
+def test_web_form_satellite_refraction_uses_site_altitude_and_common_frequency() -> None:
+    form = base_form("satellite", "track")
+    form.update(
+        tle_text=TLE.to_three_line_string(),
+        site_source="custom",
+        site_latitude_deg="12.5",
+        site_longitude_deg="33.0",
+        site_height_m="1234.5",
+        refraction_mode="atmospheric",
+        frequency_ghz="43",
+    )
+
+    request = request_from_web_form(form, None, build_application())
+
+    assert request.satellite_refraction is not None
+    assert request.satellite_refraction.enabled is True
+    assert request.satellite_refraction.frequency_ghz == pytest.approx(43.0)
+    assert request.satellite_refraction.observer_altitude_m == pytest.approx(1234.5)
+    assert request.atmosphere is None
+
+
+def test_packaged_javascript_contains_site_weather_and_common_refraction_workflow() -> None:
+    script = (
+        Path(__file__).parents[2] / "src" / "artools" / "web_assets" / "artools.js"
+    ).read_text()
+
+    assert "/api/sites" in script
+    assert "/api/sites/custom" in script
+    assert "/api/weather" in script
+    assert 'siteInput.addEventListener("focus", () => renderSiteSuggestions(""))' in script
+    assert "saveCustomSite" in script
+    assert "deleteSavedSite" in script
+    assert "renderSiteSuggestions" in script
+    assert "refreshWeather" in script
+    assert "updateRefractionUi" in script
+    assert 'refraction.value === "atmospheric"' in script
 
 
 class GroupCatalog:

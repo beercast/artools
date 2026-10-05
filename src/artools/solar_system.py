@@ -188,6 +188,7 @@ class SolarSystemTrackingService:
         target: SolarSystemBodyTarget,
         parameters: TrajectoryRequestParameters,
         atmosphere: AtmosphericParameters | None = None,
+        site: ObserverSite | None = None,
     ) -> Trajectory:
         """Generate a Solar System tracking trajectory."""
         if parameters.target_family is not TargetFamily.SOLAR_SYSTEM_BODY:
@@ -198,7 +199,7 @@ class SolarSystemTrackingService:
             raise ValueError("Solar System tracking currently only supports TRACKING")
 
         provider = _create_solar_system_position_provider(
-            target, self._calculator, self._site, atmosphere
+            target, self._calculator, site or self._site, atmosphere
         )
         return generate_tracking_trajectory(parameters, provider)
 
@@ -220,6 +221,7 @@ class SolarSystemCrossScanService:
         parameters: TrajectoryRequestParameters,
         scan: CrossScanParameters | None = None,
         atmosphere: AtmosphericParameters | None = None,
+        site: ObserverSite | None = None,
     ) -> Trajectory:
         """Generate a cross scan through the common target-independent strategy."""
         if parameters.target_family is not TargetFamily.SOLAR_SYSTEM_BODY:
@@ -230,7 +232,7 @@ class SolarSystemCrossScanService:
             raise ValueError("SolarSystemCrossScanService only supports CROSS_SCAN")
 
         provider = _create_solar_system_position_provider(
-            target, self._calculator, self._site, atmosphere
+            target, self._calculator, site or self._site, atmosphere
         )
         return generate_cross_scan_trajectory(parameters, provider, scan)
 
@@ -252,6 +254,7 @@ class SolarSystemRasterMapService:
         parameters: TrajectoryRequestParameters,
         raster: RasterMapParameters | None = None,
         atmosphere: AtmosphericParameters | None = None,
+        site: ObserverSite | None = None,
     ) -> Trajectory:
         """Generate a raster map through the common target-independent strategy."""
         if parameters.target_family is not TargetFamily.SOLAR_SYSTEM_BODY:
@@ -265,7 +268,7 @@ class SolarSystemRasterMapService:
             )
 
         provider = _create_solar_system_position_provider(
-            target, self._calculator, self._site, atmosphere
+            target, self._calculator, site or self._site, atmosphere
         )
         return generate_raster_map_trajectory(parameters, provider, raster)
 

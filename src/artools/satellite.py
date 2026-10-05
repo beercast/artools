@@ -127,9 +127,9 @@ class SatelliteRefractionParameters:
 
     The defaults are the explicit constants used by legacy ``strack(REF=True)``:
     22 GHz, 650 m observer altitude, and Pycraf's mid-latitude summer profile.
-    The 650 m value is intentionally not replaced by the SRT site's 671.6665 m
-    height because compatibility is being preserved before any physical model
-    change is approved.
+    Those defaults preserve legacy programmatic/CLI behavior. The web interface
+    overrides the altitude with the selected observing site's height and uses the
+    common observing-frequency field when atmospheric refraction is enabled.
     """
 
     enabled: bool = False
@@ -332,6 +332,7 @@ class SatelliteTrackingService:
         target: SatelliteTarget,
         parameters: TrajectoryRequestParameters,
         refraction: SatelliteRefractionParameters | None = None,
+        site: ObserverSite | None = None,
     ) -> Trajectory:
         """Generate a satellite tracking trajectory without any catalog access."""
         if parameters.target_family is not TargetFamily.SATELLITE:
@@ -343,7 +344,7 @@ class SatelliteTrackingService:
             target,
             self._calculator,
             self._refraction_calculator,
-            self._site,
+            site or self._site,
             refraction,
         )
         return generate_tracking_trajectory(parameters, provider)
@@ -370,6 +371,7 @@ class SatelliteCrossScanService:
         parameters: TrajectoryRequestParameters,
         scan: CrossScanParameters | None = None,
         refraction: SatelliteRefractionParameters | None = None,
+        site: ObserverSite | None = None,
     ) -> Trajectory:
         """Generate a satellite cross scan without any catalog access."""
         if parameters.target_family is not TargetFamily.SATELLITE:
@@ -381,7 +383,7 @@ class SatelliteCrossScanService:
             target,
             self._calculator,
             self._refraction_calculator,
-            self._site,
+            site or self._site,
             refraction,
         )
         return generate_cross_scan_trajectory(parameters, provider, scan)
@@ -408,6 +410,7 @@ class SatelliteRasterMapService:
         parameters: TrajectoryRequestParameters,
         raster: RasterMapParameters | None = None,
         refraction: SatelliteRefractionParameters | None = None,
+        site: ObserverSite | None = None,
     ) -> Trajectory:
         """Generate a satellite raster map without any catalog access."""
         if parameters.target_family is not TargetFamily.SATELLITE:
@@ -423,7 +426,7 @@ class SatelliteRasterMapService:
             target,
             self._calculator,
             self._refraction_calculator,
-            self._site,
+            site or self._site,
             refraction,
         )
         return generate_raster_map_trajectory(parameters, provider, raster)

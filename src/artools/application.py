@@ -16,10 +16,12 @@ from .astronomical import (
     create_default_astronomical_tracking_service,
 )
 from .auxiliary_telescope import AuxiliaryTelescopeTrajectoryWriter
+from .configuration import SRT_SITE
 from .cross_scan import CrossScanParameters
 from .domain import (
     AtmosphericParameters,
     AstronomicalSourceTarget,
+    ObserverSite,
     TargetFamily,
     Trajectory,
     TrajectoryMode,
@@ -84,10 +86,13 @@ class TrajectoryGenerationRequest:
     half_span_deg: float | None = None
     atmosphere: AtmosphericParameters | None = None
     satellite_refraction: SatelliteRefractionParameters | None = None
+    site: ObserverSite = SRT_SITE
 
     def __post_init__(self) -> None:
         if not isinstance(self.parameters, TrajectoryRequestParameters):
             raise TypeError("parameters must be TrajectoryRequestParameters")
+        if not isinstance(self.site, ObserverSite):
+            raise TypeError("site must be ObserverSite")
         if not isinstance(
             self.target,
             (AstronomicalSourceTarget, SolarSystemBodyTarget, SatelliteTarget),
@@ -217,7 +222,7 @@ class TrajectoryApplicationService:
             target = cast(AstronomicalSourceTarget, request.target)
             if mode is TrajectoryMode.TRACKING:
                 return self._astronomical_tracking.track(
-                    target, request.parameters, request.atmosphere
+                    target, request.parameters, request.atmosphere, request.site
                 )
             if mode is TrajectoryMode.CROSS_SCAN:
                 return self._astronomical_cross_scan.cross_scan(
@@ -225,19 +230,21 @@ class TrajectoryApplicationService:
                     request.parameters,
                     _cross_scan_parameters(request.half_span_deg),
                     request.atmosphere,
+                    request.site,
                 )
             return self._astronomical_raster_map.raster_map(
                 target,
                 request.parameters,
                 _raster_map_parameters(request.half_span_deg),
                 request.atmosphere,
+                request.site,
             )
 
         if family is TargetFamily.SOLAR_SYSTEM_BODY:
             target = cast(SolarSystemBodyTarget, request.target)
             if mode is TrajectoryMode.TRACKING:
                 return self._solar_system_tracking.track(
-                    target, request.parameters, request.atmosphere
+                    target, request.parameters, request.atmosphere, request.site
                 )
             if mode is TrajectoryMode.CROSS_SCAN:
                 return self._solar_system_cross_scan.cross_scan(
@@ -245,18 +252,20 @@ class TrajectoryApplicationService:
                     request.parameters,
                     _cross_scan_parameters(request.half_span_deg),
                     request.atmosphere,
+                    request.site,
                 )
             return self._solar_system_raster_map.raster_map(
                 target,
                 request.parameters,
                 _raster_map_parameters(request.half_span_deg),
                 request.atmosphere,
+                request.site,
             )
 
         target = cast(SatelliteTarget, request.target)
         if mode is TrajectoryMode.TRACKING:
             return self._satellite_tracking.track(
-                target, request.parameters, request.satellite_refraction
+                target, request.parameters, request.satellite_refraction, request.site
             )
         if mode is TrajectoryMode.CROSS_SCAN:
             return self._satellite_cross_scan.cross_scan(
@@ -264,12 +273,14 @@ class TrajectoryApplicationService:
                 request.parameters,
                 _cross_scan_parameters(request.half_span_deg),
                 request.satellite_refraction,
+                request.site,
             )
         return self._satellite_raster_map.raster_map(
             target,
             request.parameters,
             _raster_map_parameters(request.half_span_deg),
             request.satellite_refraction,
+            request.site,
         )
 
     def generate_file(

@@ -107,10 +107,10 @@ class AstronomicalSourceTarget:
 class AtmosphericParameters:
     """Atmospheric inputs used by horizontal-coordinate transformations.
 
-    ``relative_humidity`` is deliberately passed through with the same numerical
-    semantics as the legacy Astropy call. The legacy notebooks contain values
-    such as 56, 65, and 69, so this step does not silently reinterpret them as
-    percentages or fractions.
+    ``relative_humidity`` is passed through unchanged by the scientific core for
+    legacy compatibility. The web adapter exposes humidity as a percentage and
+    converts it to Astropy's 0..1 fraction before constructing this object. Older
+    programmatic and CLI paths keep their existing numerical semantics.
     """
 
     pressure_hpa: float = 0.0

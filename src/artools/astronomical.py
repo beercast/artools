@@ -444,6 +444,7 @@ class AstronomicalTrackingService:
         target: AstronomicalSourceTarget,
         parameters: TrajectoryRequestParameters,
         atmosphere: AtmosphericParameters | None = None,
+        site: ObserverSite | None = None,
     ) -> Trajectory:
         """Generate an astronomical tracking trajectory.
 
@@ -462,7 +463,7 @@ class AstronomicalTrackingService:
             target,
             self._resolver,
             self._calculator,
-            self._site,
+            site or self._site,
             atmosphere,
         )
         return generate_tracking_trajectory(parameters, provider)
@@ -487,6 +488,7 @@ class AstronomicalCrossScanService:
         parameters: TrajectoryRequestParameters,
         scan: CrossScanParameters | None = None,
         atmosphere: AtmosphericParameters | None = None,
+        site: ObserverSite | None = None,
     ) -> Trajectory:
         """Generate a cross scan using the shared corrected scan strategy."""
         if parameters.target_family is not TargetFamily.ASTRONOMICAL_SOURCE:
@@ -502,7 +504,7 @@ class AstronomicalCrossScanService:
             target,
             self._resolver,
             self._calculator,
-            self._site,
+            site or self._site,
             atmosphere,
         )
         return generate_cross_scan_trajectory(parameters, provider, scan)
@@ -527,6 +529,7 @@ class AstronomicalRasterMapService:
         parameters: TrajectoryRequestParameters,
         raster: RasterMapParameters | None = None,
         atmosphere: AtmosphericParameters | None = None,
+        site: ObserverSite | None = None,
     ) -> Trajectory:
         """Generate a raster map through the shared map strategy."""
         if parameters.target_family is not TargetFamily.ASTRONOMICAL_SOURCE:
@@ -543,7 +546,7 @@ class AstronomicalRasterMapService:
             target,
             self._resolver,
             self._calculator,
-            self._site,
+            site or self._site,
             atmosphere,
         )
         return generate_raster_map_trajectory(parameters, provider, raster)

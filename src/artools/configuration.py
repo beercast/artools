@@ -12,6 +12,9 @@ SRT_SITE = ObserverSite(
 )
 """Observer location of the Auxiliary Telescope at the SRT site."""
 
+SRT_DISPLAY_NAME = "Sardinia Radio Telescope (SRT)"
+"""User-facing name for the default observing site."""
+
 
 AUXILIARY_TELESCOPE = ControlledSystem(
     identifier="auxiliary_telescope",
@@ -20,4 +23,4 @@ AUXILIARY_TELESCOPE = ControlledSystem(
 """The controlled system implemented by the first ARTools application."""
 
 
-__all__ = ["AUXILIARY_TELESCOPE", "SRT_SITE"]
+__all__ = ["AUXILIARY_TELESCOPE", "SRT_DISPLAY_NAME", "SRT_SITE"]

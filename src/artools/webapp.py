@@ -28,15 +28,21 @@ from .astronomical import (
     SimbadSourceCatalogError,
 )
 from .auxiliary_telescope import AuxiliaryTelescopeTrajectoryWriter
+from .configuration import SRT_DISPLAY_NAME, SRT_SITE
 from .domain import (
     AtmosphericParameters,
     AstronomicalSourceTarget,
+    ObserverSite,
     TargetFamily,
     TrajectoryMode,
     TrajectoryRequestParameters,
 )
 from .parsing import InputParseError, parse_utc_datetime
-from .preferences import PreferencesError, SourceFavoritesStore
+from .preferences import (
+    PreferencesError,
+    SavedObservingSiteStore,
+    SourceFavoritesStore,
+)
 from .satellite import (
     SatelliteDependencyError,
     SatelliteNotFoundError,
@@ -50,10 +56,13 @@ from .solar_system import (
     SolarSystemDependencyError,
     UnsupportedSolarSystemBodyError,
 )
+from .sites import AstropyObservatoryCatalog, ObservatoryCatalog, SiteCatalogError
 from .web_ui import render_dynamic_fields, render_index
+from .weather import OpenMeteoWeatherClient, WeatherServiceError
 
 
 SIMBAD_SUGGESTION_LIMIT = 20
+SPEED_OF_LIGHT_M_S = 299_792_458.0
 
 
 class WebInputError(ValueError):
@@ -75,6 +84,9 @@ def create_app(
     writer: AuxiliaryTelescopeTrajectoryWriter | None = None,
     simbad_catalog: SimbadSourceCatalog | None = None,
     favorites: SourceFavoritesStore | None = None,
+    saved_sites: SavedObservingSiteStore | None = None,
+    site_catalog: ObservatoryCatalog | None = None,
+    weather: OpenMeteoWeatherClient | None = None,
     open_directory: Callable[[Path], None] | None = None,
 ) -> FastAPI:
     """Create the local ARTools FastAPI application.
@@ -88,6 +100,9 @@ def create_app(
     trajectory_writer = writer or AuxiliaryTelescopeTrajectoryWriter()
     source_catalog = simbad_catalog or SimbadSourceCatalog()
     favorites_store = favorites or SourceFavoritesStore()
+    saved_site_store = saved_sites or SavedObservingSiteStore()
+    observatory_catalog = site_catalog or AstropyObservatoryCatalog()
+    weather_client = weather or OpenMeteoWeatherClient()
     directory_opener = open_directory or _open_directory
     app = FastAPI(title="ARTools", docs_url=None, redoc_url=None)
     assets = Path(__file__).with_name("web_assets")
@@ -100,6 +115,112 @@ def create_app(
     @app.get("/ui/fields", response_class=HTMLResponse)
     def fields(target_family: str = "astronomical", mode: str = "track") -> HTMLResponse:
         return HTMLResponse(render_dynamic_fields(target_family, mode))
+
+    @app.get("/api/sites")
+    async def observing_sites() -> JSONResponse:
+        try:
+            saved = await run_in_threadpool(saved_site_store.list)
+        except PreferencesError as error:
+            return JSONResponse({"detail": str(error)}, status_code=500)
+
+        sites = [{"source": "srt", "name": SRT_DISPLAY_NAME}]
+        sites.extend(_saved_site_payload(site) for site in saved)
+        try:
+            names = await run_in_threadpool(observatory_catalog.names)
+        except SiteCatalogError as error:
+            sites.append({"source": "custom", "name": "Custom site..."})
+            return JSONResponse(
+                {
+                    "sites": sites,
+                    "catalog_available": False,
+                    "detail": str(error),
+                }
+            )
+
+        sites.extend({"source": "astropy", "name": name} for name in names)
+        sites.append({"source": "custom", "name": "Custom site..."})
+        return JSONResponse({"sites": sites, "catalog_available": True})
+
+    @app.post("/api/sites/custom")
+    async def save_custom_site(request: Request) -> JSONResponse:
+        try:
+            payload = await request.json()
+        except Exception:
+            return JSONResponse({"detail": "Invalid observing-site request"}, status_code=400)
+        if not isinstance(payload, dict):
+            return JSONResponse({"detail": "Invalid observing-site request"}, status_code=400)
+        try:
+            site = await run_in_threadpool(
+                saved_site_store.save,
+                str(payload.get("name", "")),
+                float(payload.get("latitude_deg", "")),
+                float(payload.get("longitude_deg", "")),
+                float(payload.get("height_m", "")),
+            )
+        except (PreferencesError, TypeError, ValueError, OverflowError) as error:
+            return JSONResponse({"detail": str(error)}, status_code=400)
+        return JSONResponse({"site": _saved_site_payload(site)})
+
+    @app.delete("/api/sites/custom")
+    async def delete_custom_site(name: str = "") -> JSONResponse:
+        try:
+            remaining = await run_in_threadpool(saved_site_store.remove, name)
+        except (PreferencesError, ValueError) as error:
+            return JSONResponse({"detail": str(error)}, status_code=400)
+        return JSONResponse({"sites": [_saved_site_payload(site) for site in remaining]})
+
+    @app.get("/api/weather")
+    async def weather_conditions(
+        site_source: str = "srt",
+        site_name: str = "",
+        latitude: str = "",
+        longitude: str = "",
+        height: str = "",
+        at: str = "",
+    ) -> JSONResponse:
+        values = {
+            "site_source": site_source,
+            "site_name": site_name,
+            "site_latitude_deg": latitude,
+            "site_longitude_deg": longitude,
+            "site_height_m": height,
+        }
+        try:
+            site = await run_in_threadpool(
+                _observer_site, values, observatory_catalog, saved_site_store
+            )
+            if not at.strip():
+                raise WebInputError("Weather time is required")
+            timestamp = parse_utc_datetime(at)
+            conditions = await run_in_threadpool(
+                weather_client.conditions_at, site, timestamp
+            )
+        except (
+            SiteCatalogError,
+            PreferencesError,
+            WeatherServiceError,
+            InputParseError,
+            WebInputError,
+            TypeError,
+            ValueError,
+        ) as error:
+            return JSONResponse({"detail": str(error)}, status_code=400)
+
+        return JSONResponse(
+            {
+                "temperature_c": conditions.temperature_c,
+                "pressure_hpa": conditions.pressure_hpa,
+                "relative_humidity_percent": conditions.relative_humidity_percent,
+                "valid_at": conditions.valid_at.isoformat().replace("+00:00", "Z"),
+                "source": conditions.source,
+                "site": {
+                    "name": site.name,
+                    "latitude_deg": site.latitude_deg,
+                    "longitude_deg": site.longitude_deg,
+                    "height_m": site.height_m,
+                },
+            }
+        )
 
     @app.get("/api/simbad/suggestions")
     async def simbad_suggestions(q: str = "") -> JSONResponse:
@@ -275,6 +396,8 @@ def create_app(
                 uploaded_tle_text,
                 service,
                 trajectory_writer,
+                observatory_catalog,
+                saved_site_store,
             )
         except _USER_FACING_ERRORS as error:
             return JSONResponse({"detail": str(error)}, status_code=400)
@@ -298,8 +421,16 @@ def _generate_download(
     uploaded_tle_text: str | None,
     application: TrajectoryApplicationService,
     writer: AuxiliaryTelescopeTrajectoryWriter,
+    site_catalog: ObservatoryCatalog | None = None,
+    saved_sites: SavedObservingSiteStore | None = None,
 ) -> GeneratedDownload:
-    request = request_from_web_form(values, uploaded_tle_text, application)
+    request = request_from_web_form(
+        values,
+        uploaded_tle_text,
+        application,
+        site_catalog=site_catalog,
+        saved_sites=saved_sites,
+    )
     trajectory = application.generate_trajectory(request)
     serialized = writer.serialize(trajectory).encode("ascii")
     requested_filename = values.get("output_name", "").strip()
@@ -319,6 +450,9 @@ def request_from_web_form(
     values: Mapping[str, str],
     uploaded_tle_text: str | None,
     application: TrajectoryApplicationService,
+    *,
+    site_catalog: ObservatoryCatalog | None = None,
+    saved_sites: SavedObservingSiteStore | None = None,
 ) -> TrajectoryGenerationRequest:
     """Convert web form values into the shared validated application request."""
     controlled_system = _value(values, "controlled_system", "auxiliary_telescope")
@@ -337,6 +471,12 @@ def request_from_web_form(
     half_span = None if mode is TrajectoryMode.TRACKING else _float(
         values, "half_span_deg", "Half span", default=2.0
     )
+    site = _observer_site(
+        values,
+        site_catalog or AstropyObservatoryCatalog(),
+        saved_sites,
+    )
+    refraction_enabled = _refraction_enabled(values)
 
     if family is TargetFamily.ASTRONOMICAL_SOURCE:
         source_name = values.get("source_canonical", "").strip() or _required(
@@ -346,7 +486,8 @@ def request_from_web_form(
             target=AstronomicalSourceTarget(source_name),
             parameters=parameters,
             half_span_deg=half_span,
-            atmosphere=_atmosphere(values),
+            site=site,
+            atmosphere=_atmosphere(values) if refraction_enabled else None,
         )
 
     if family is TargetFamily.SOLAR_SYSTEM_BODY:
@@ -356,7 +497,8 @@ def request_from_web_form(
             ),
             parameters=parameters,
             half_span_deg=half_span,
-            atmosphere=_atmosphere(values),
+            site=site,
+            atmosphere=_atmosphere(values) if refraction_enabled else None,
         )
 
     target = _satellite_target(values, uploaded_tle_text, application)
@@ -364,24 +506,25 @@ def request_from_web_form(
         target=target,
         parameters=parameters,
         half_span_deg=half_span,
+        site=site,
         satellite_refraction=SatelliteRefractionParameters(
-            enabled=_checkbox(values, "refraction"),
-            frequency_ghz=_float(
-                values,
-                "refraction_frequency_ghz",
-                "Refraction frequency",
-                default=22.0,
-            ),
-            observer_altitude_m=_float(
-                values,
-                "refraction_altitude_m",
-                "Refraction observer altitude",
-                default=650.0,
-            ),
+            enabled=refraction_enabled,
+            frequency_ghz=_frequency_ghz(values),
+            observer_altitude_m=site.height_m,
         ),
     )
 
 
+
+
+def _saved_site_payload(site: ObserverSite) -> dict[str, object]:
+    return {
+        "source": "saved",
+        "name": site.name,
+        "latitude_deg": site.latitude_deg,
+        "longitude_deg": site.longitude_deg,
+        "height_m": site.height_m,
+    }
 
 def _favorite_key(name: str) -> str:
     value = name.strip()
@@ -447,14 +590,81 @@ def _satellite_target(
 
 
 def _atmosphere(values: Mapping[str, str]) -> AtmosphericParameters:
+    humidity_percent = _float(values, "relative_humidity", "Relative humidity")
+    if not 0.0 <= humidity_percent <= 100.0:
+        raise WebInputError("Relative humidity must be within [0, 100] percent")
     return AtmosphericParameters(
-        pressure_hpa=_float(values, "pressure_hpa", "Pressure", default=0.0),
-        temperature_c=_float(values, "temperature_c", "Temperature", default=0.0),
-        relative_humidity=_float(
-            values, "relative_humidity", "Relative humidity", default=0.0
-        ),
-        wavelength_m=_float(values, "wavelength_m", "Wavelength", default=0.013627),
+        pressure_hpa=_float(values, "pressure_hpa", "Pressure"),
+        temperature_c=_float(values, "temperature_c", "Temperature"),
+        relative_humidity=humidity_percent / 100.0,
+        wavelength_m=SPEED_OF_LIGHT_M_S / (_frequency_ghz(values) * 1.0e9),
     )
+
+
+def _frequency_ghz(values: Mapping[str, str]) -> float:
+    raw = _value(values, "frequency_ghz").strip()
+    if raw:
+        frequency = _float(values, "frequency_ghz", "Observing frequency")
+    else:
+        legacy_frequency = _value(values, "refraction_frequency_ghz").strip()
+        if legacy_frequency:
+            frequency = _float(
+                values,
+                "refraction_frequency_ghz",
+                "Refraction frequency",
+            )
+        else:
+            legacy_wavelength = _value(values, "wavelength_m").strip()
+            if legacy_wavelength:
+                wavelength = _float(values, "wavelength_m", "Wavelength")
+                if wavelength <= 0:
+                    raise WebInputError("Wavelength must be greater than zero")
+                frequency = SPEED_OF_LIGHT_M_S / (wavelength * 1.0e9)
+            else:
+                frequency = 22.0
+    if frequency <= 0:
+        raise WebInputError("Observing frequency must be greater than zero")
+    return frequency
+
+
+def _refraction_enabled(values: Mapping[str, str]) -> bool:
+    mode = _value(values, "refraction_mode").strip().casefold()
+    if not mode:
+        return _checkbox(values, "refraction")
+    if mode == "none":
+        return False
+    if mode == "atmospheric":
+        return True
+    raise WebInputError(f"Unsupported refraction mode: {mode!r}")
+
+
+def _observer_site(
+    values: Mapping[str, str],
+    site_catalog: ObservatoryCatalog,
+    saved_sites: SavedObservingSiteStore | None = None,
+) -> ObserverSite:
+    raw_source = values.get("site_source")
+    source = "srt" if raw_source is None else str(raw_source).strip().casefold()
+    if not source:
+        raise WebInputError("Choose an observing site from the list or Custom site")
+    if source == "srt":
+        return SRT_SITE
+    if source == "astropy":
+        return site_catalog.resolve(_required(values, "site_name", "Observing site"))
+    if source == "saved":
+        if saved_sites is None:
+            raise WebInputError("Saved observing sites are not available")
+        return saved_sites.resolve(_required(values, "site_name", "Observing site"))
+    if source == "custom":
+        custom_name = _value(values, "site_name").strip() or "Custom site"
+        return ObserverSite(
+            identifier="custom_site",
+            name=custom_name,
+            latitude_deg=_float(values, "site_latitude_deg", "Site latitude"),
+            longitude_deg=_float(values, "site_longitude_deg", "Site longitude"),
+            height_m=_float(values, "site_height_m", "Site altitude"),
+        )
+    raise WebInputError("Choose an observing site from the list or Custom site")
 
 
 def _target_family(value: str) -> TargetFamily:
@@ -598,6 +808,9 @@ _USER_FACING_ERRORS = (
     SatelliteNotFoundError,
     TleCatalogError,
     TleFormatError,
+    SiteCatalogError,
+    PreferencesError,
+    WeatherServiceError,
     InputParseError,
     WebInputError,
     TypeError,

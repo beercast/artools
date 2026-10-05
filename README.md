@@ -1,8 +1,9 @@
 # ARTools
 
 ARTools is a Python project for generating trajectory files used to move an
-auxiliary reference telescope (ART) located at the Sardinia Radio Telescope
-(SRT) site. The ART is used as a reference for SRT calibrations.
+auxiliary reference telescope (ART). The original and default deployment is at
+the Sardinia Radio Telescope (SRT), where the ART is used as a reference for SRT
+calibrations.
 
 
 ## Scope
@@ -19,8 +20,10 @@ For each target family, the intended trajectory modes are:
 - cross scan;
 - raster map.
 
-The SRT site coordinates are used as observer location for
-azimuth/elevation calculations (the ART is located at the SRT site).
+The graphical interface uses SRT as the default observer location, but it can
+also select sites from Astropy's observing-site registry or use manually entered
+latitude, longitude and altitude. This allows the same trajectory workflow to be
+used at other sites.
 
 
 ## Installation
@@ -58,6 +61,48 @@ This section explains what ARTools does from user input to the final trajectory
 file. It starts with the functional flow and then gives only the implementation
 details needed to understand where each step happens in the code.
 
+### Observing site and refraction
+
+The graphical interface treats the observer location as a parameter of each
+trajectory. `Sardinia Radio Telescope (SRT)` is selected by default and uses the
+explicit SRT coordinates stored by ARTools. The site selector also searches the
+observatory registry provided by
+[Astropy](https://docs.astropy.org/en/stable/coordinates/earth.html), and
+`Custom site...` allows a name, latitude, longitude and altitude to be entered
+directly. Custom sites can be saved locally for reuse or deleted later. If the
+Astropy site catalog is temporarily unavailable, SRT, saved sites and
+`Custom site...` remain available.
+
+Refraction is disabled by default. The GUI exposes one common `Refraction`
+selector for all target families:
+
+- `No refraction`: use the geometric/topocentric position without an atmospheric
+  correction;
+- `Atmospheric refraction`: enable the appropriate correction for the selected
+  target family.
+
+For astronomical sources and Solar System bodies, atmospheric refraction is
+handled by Astropy's `AltAz` transformation. The GUI can prefill surface
+pressure, temperature and relative humidity from
+[Open-Meteo](https://open-meteo.com/) for the selected site and trajectory start
+time. The selected site's latitude, longitude and altitude are sent to the
+weather service. The returned values remain normal editable fields, so they can
+be replaced manually before generation. The observing frequency is converted to
+the wavelength required by Astropy.
+
+For satellites, the position is first calculated geometrically with Pycraf/SGP4.
+If atmospheric refraction is enabled,
+`PycrafSatelliteRefractionCalculator` in
+[`satellite.py`](src/artools/satellite.py) applies the same mid-latitude-summer
+Pycraf refraction model used by the legacy implementation. It uses the selected
+site altitude and the common observing-frequency field. Open-Meteo pressure,
+temperature and humidity are not used by this legacy satellite model, so those
+weather fields are hidden for satellites.
+
+The observing site is carried in `TrajectoryGenerationRequest` and passed to the
+family-specific position calculator. Refraction remains outside the generic
+tracking, cross-scan and raster-map geometry.
+
 ### Astronomical source
 
 #### Main flow
@@ -72,9 +117,9 @@ For an astronomical source, trajectory generation has four main steps:
 2. **Get the source coordinates.** ARTools queries SIMBAD again using the selected
    source name and obtains its equatorial coordinates: right ascension (RA) and
    declination (Dec).
-3. **Calculate the source position at SRT.** From RA/Dec, the SRT geographical
-   position and the required UTC times, ARTools calculates the source azimuth and
-   elevation as seen from SRT.
+3. **Calculate the source position at the observing site.** From RA/Dec, the
+   selected geographical location and the required UTC times, ARTools calculates
+   the source azimuth and elevation as seen from that site.
 4. **Generate the trajectory.** ARTools applies the selected mode - tracking,
    cross scan or raster map - and produces the sequence of time-tagged
    azimuth/elevation positions written to the Auxiliary Telescope trajectory
@@ -92,7 +137,7 @@ SIMBAD search -> selected source
 SIMBAD -> RA / Dec
     |
     v
-position at SRT -> Azimuth / Elevation
+position at observing site -> Azimuth / Elevation
     |
     v
 Tracking / Cross scan / Raster map
@@ -119,9 +164,9 @@ user select a source; they do not change the trajectory calculation.
 When the user presses `Generate trajectory`, ARTools queries SIMBAD again to
 obtain the selected source RA/Dec coordinates. It then uses the
 [Astropy](https://www.astropy.org/) library to calculate the corresponding
-azimuth and elevation as seen from SRT at each required time. Finally, the
-ARTools core applies the selected trajectory mode and writes the resulting
-time-tagged positions to the Auxiliary Telescope file.
+azimuth and elevation as seen from the selected observing site at each required
+time. Finally, the ARTools core applies the selected trajectory mode and writes
+the resulting time-tagged positions to the Auxiliary Telescope file.
 
 The responsibilities are therefore:
 
@@ -135,8 +180,8 @@ File serialization     -> ARTools core
 
 The values submitted by the GUI are collected into a
 [`TrajectoryGenerationRequest`](src/artools/application.py), a simple ARTools
-object containing everything needed for one generation request: target, mode,
-timing parameters and mode-specific options.
+object containing everything needed for one generation request: target, observing
+site, mode, timing parameters, refraction settings and mode-specific options.
 
 #### Modifying trajectory generation
 
@@ -171,9 +216,11 @@ The main parameters are:
   the trajectory mode.
 - `Half span`: angular half-width used by cross scan and raster map. It is not
   used for tracking.
-- Atmospheric parameters: pressure, temperature, relative humidity and observing
-  wavelength. These affect the Astropy AltAz calculation before the trajectory
-  geometry is applied.
+- `Observing site`: SRT by default, an Astropy catalog site, a saved custom site,
+  or manually entered coordinates in the graphical interface.
+- `Refraction`: `No refraction` by default or `Atmospheric refraction`. For
+  astronomical/Solar System targets the GUI uses pressure, temperature, relative
+  humidity and observing frequency in the Astropy `AltAz` transformation.
 
 For `Tracking`, `Requested points` is the total number of trajectory points.
 
@@ -212,6 +259,10 @@ YYYY/MM/DD HH:MM:SS.mmm, DDD:MM:SS, DDD:MM:SS
 
 The three fields are timestamp, azimuth and elevation. The file has no header.
 
+In the web interface, the default download filename is built from the target name
+and the trajectory start epoch, for example `W3OH_20260930T123000Z.txt`. The name
+can still be edited before generation.
+
 #### Using the [command-line interface](#command-line-interface)
 
 The [command-line interface](#command-line-interface) uses the same ARTools generation logic as the web interface. The main
@@ -247,8 +298,9 @@ Trajectory generation has three main steps:
 
 1. **Select the body.** The user chooses one of the Solar System bodies supported
    by ARTools from the web interface.
-2. **Calculate the body position at SRT.** ARTools uses Astropy to calculate where
-   that body appears in the sky from the SRT site at each required UTC time.
+2. **Calculate the body position at the observing site.** ARTools uses Astropy
+   to calculate where that body appears in the sky from the selected site at each
+   required UTC time.
 3. **Generate the trajectory.** ARTools applies the selected mode - tracking,
    cross scan or raster map - and produces the same kind of time-tagged
    azimuth/elevation trajectory described in the [Astronomical source section](#astronomical-source).
@@ -259,7 +311,7 @@ In compact form:
 selected Solar System body
     |
     v
-Astropy -> body position at SRT -> Azimuth / Elevation
+Astropy -> body position at observing site -> Azimuth / Elevation
     |
     v
 Tracking / Cross scan / Raster map
@@ -276,8 +328,8 @@ Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune.
 
 When the user presses `Generate trajectory`, the selected name is passed to the
 [Astropy](https://www.astropy.org/) library. ARTools uses Astropy's built-in
-Solar System ephemeris to calculate the body position for the SRT site and the
-required times, and then obtains azimuth and elevation.
+Solar System ephemeris to calculate the body position for the selected observing
+site and the required times, and then obtains azimuth and elevation.
 
 Because the built-in ephemeris is used, this calculation does not require an
 external network service.
@@ -294,7 +346,7 @@ File serialization      -> ARTools core
 
 The main ARTools component specific to this target family is
 [`AstropySolarSystemPositionCalculator`](src/artools/solar_system.py), which
-uses Astropy to calculate the body position at SRT.
+uses Astropy to calculate the body position at the selected observing site.
 
 [`SolarSystemBody`](src/artools/solar_system.py) defines the Solar System
 body names currently accepted by ARTools.
@@ -328,9 +380,9 @@ Therefore:
   [`raster_map.py`](src/artools/raster_map.py) if the trajectory geometry or
   timing itself must change.
 
-`Start time`, `Sample interval`, `Requested points`, `Half span`, the atmospheric
-parameters, and the three trajectory modes have the same meaning described in
-the [Astronomical source section](#astronomical-source).
+`Start time`, `Sample interval`, `Requested points`, `Half span`, observing site,
+refraction settings, and the three trajectory modes have the same meaning
+described in the [Astronomical source section](#astronomical-source).
 
 The output is also identical: all modes produce a `Trajectory`, which is then
 serialized by `AuxiliaryTelescopeTrajectoryWriter` into the Auxiliary Telescope
@@ -385,8 +437,8 @@ name to filter the list and then select the required satellite.
 After one satellite has been selected, trajectory generation has the same two
 remaining steps as before:
 
-1. **Calculate the satellite position at SRT.** ARTools uses Pycraf/SGP4 to
-   calculate azimuth and elevation at each required UTC time.
+1. **Calculate the satellite position at the observing site.** ARTools uses
+   Pycraf/SGP4 to calculate azimuth and elevation at each required UTC time.
 2. **Generate the trajectory.** ARTools applies tracking, cross scan or raster
    map and produces the same time-tagged azimuth/elevation trajectory described
    in the [Astronomical source section](#astronomical-source).
@@ -402,7 +454,7 @@ Paste one named TLE -------------+          v
                                       Pycraf / SGP4
                                            |
                                            v
-                                Azimuth / Elevation at SRT
+                                Azimuth / Elevation at observing site
                                            |
                                            v
                               Tracking / Cross scan / Raster map
@@ -431,9 +483,9 @@ inspected directly.
 
 Once a satellite TLE has been selected, ARTools uses the
 [Pycraf satellite library](https://bwinkel.github.io/pycraf/latest/satellite/index.html)
-to calculate the satellite position relative to the SRT observer. Pycraf uses
-the SGP4 orbit propagator and returns horizontal coordinates including azimuth,
-elevation and distance.
+to calculate the satellite position relative to the selected observer location.
+Pycraf uses the SGP4 orbit propagator and returns horizontal coordinates including
+azimuth, elevation and distance.
 
 The responsibilities are therefore:
 
@@ -455,7 +507,8 @@ The main ARTools components specific to satellites are in
   from them;
 - `CelesTrakTleCatalog` downloads the CelesTrak catalog;
 - `SatelliteTarget` represents the selected satellite;
-- `PycrafSatellitePositionCalculator` calculates the satellite position at SRT;
+- `PycrafSatellitePositionCalculator` calculates the satellite position at the
+  selected observing site;
 - `PycrafSatelliteRefractionCalculator` provides the optional legacy-compatible
   refraction correction.
 
@@ -492,9 +545,12 @@ Therefore:
 trajectory modes have the same meaning described in the
 [Astronomical source section](#astronomical-source).
 
-Satellites do not use the astronomical/Solar System atmospheric parameters.
-Instead, the GUI provides a separate optional `Satellite refraction` correction,
-with its own frequency and observer-altitude parameters.
+The GUI uses the same common `Refraction` selector for satellites. With
+`No refraction`, the geometric Pycraf/SGP4 Az/El values are used directly. With
+`Atmospheric refraction`, `PycrafSatelliteRefractionCalculator` applies the
+legacy-compatible Pycraf correction using the selected site altitude and common
+observing frequency. The Open-Meteo pressure, temperature and humidity values are
+not inputs to that legacy satellite profile.
 
 The output is the same `Trajectory` and Auxiliary Telescope file format described
 in the [Astronomical source output section](#output).
@@ -534,6 +590,10 @@ Help is also available for every command, for example:
 ```
 
 ### Common options
+
+The observing-site selector and Open-Meteo prefill described above are currently
+features of the graphical interface. The CLI retains the SRT observer location
+and its existing atmospheric/refraction arguments.
 
 All modes use these options:
 

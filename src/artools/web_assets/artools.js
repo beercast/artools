@@ -108,6 +108,384 @@
     return payload;
   }
 
+  const siteState = {
+    sites: [
+      { source: "srt", name: "Sardinia Radio Telescope (SRT)" },
+      { source: "custom", name: "Custom site..." },
+    ],
+  };
+
+  function siteStatus(message, kind) {
+    const node = document.getElementById("site-status");
+    if (!node) return;
+    node.textContent = message || "";
+    node.className = "source-message" + (kind ? " " + kind : "");
+  }
+
+  function weatherStatus(message, kind) {
+    const node = document.getElementById("weather-status");
+    if (!node) return;
+    node.textContent = message || "";
+    node.className = "source-message" + (kind ? " " + kind : "");
+  }
+
+  function clearSiteSuggestions() {
+    const menu = document.getElementById("site-suggestions");
+    const input = document.getElementById("site-input");
+    if (menu) {
+      menu.replaceChildren();
+      menu.hidden = true;
+    }
+    if (input) input.setAttribute("aria-expanded", "false");
+  }
+
+  function selectedSiteSource() {
+    const source = document.getElementById("site-source");
+    return source ? source.value : "";
+  }
+
+  function siteSourceLabel(site) {
+    if (site.source === "saved") return "Saved";
+    if (site.source === "astropy") return "Astropy catalog";
+    if (site.source === "custom") return "Manual coordinates";
+    return "Default";
+  }
+
+  function renderSiteSuggestions(query = "") {
+    const menu = document.getElementById("site-suggestions");
+    const input = document.getElementById("site-input");
+    if (!menu || !input) return;
+    const key = query.trim().toLowerCase();
+    const matches = siteState.sites.filter(
+      (site) => !key || site.name.toLowerCase().includes(key)
+    );
+
+    menu.replaceChildren();
+    if (!matches.length) {
+      const empty = document.createElement("div");
+      empty.className = "autocomplete-empty";
+      empty.textContent = "No observing sites match.";
+      menu.appendChild(empty);
+    } else {
+      matches.forEach((site) => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.className = "autocomplete-option";
+        option.setAttribute("role", "option");
+
+        const names = document.createElement("span");
+        names.className = "autocomplete-names";
+        const label = document.createElement("strong");
+        label.textContent = site.name;
+        const source = document.createElement("small");
+        source.textContent = siteSourceLabel(site);
+        names.append(label, source);
+        option.appendChild(names);
+
+        option.addEventListener("click", () => selectSite(site));
+        menu.appendChild(option);
+      });
+    }
+    menu.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+  }
+
+  function setCoordinateFields(site) {
+    const customName = document.getElementById("site-custom-name");
+    const latitude = document.getElementById("site-latitude");
+    const longitude = document.getElementById("site-longitude");
+    const height = document.getElementById("site-height");
+    if (!customName || !latitude || !longitude || !height) return;
+
+    if (site.source === "saved") {
+      customName.value = site.name;
+      latitude.value = site.latitude_deg;
+      longitude.value = site.longitude_deg;
+      height.value = site.height_m;
+    } else if (site.source === "custom") {
+      customName.value = "";
+      latitude.value = "";
+      longitude.value = "";
+      height.value = "";
+    }
+  }
+
+  function selectSite(site) {
+    const input = document.getElementById("site-input");
+    const source = document.getElementById("site-source");
+    const name = document.getElementById("site-name");
+    if (!input || !source || !name) return;
+
+    input.value = site.name;
+    input.dataset.selectedSite = site.name;
+    source.value = site.source;
+    name.value = site.source === "astropy" || site.source === "saved" ? site.name : "";
+    setCoordinateFields(site);
+    clearSiteSuggestions();
+    updateSiteUi();
+    siteStatus("", "");
+
+    const refraction = document.getElementById("refraction-mode");
+    const family = document.getElementById("target-family");
+    if (
+      refraction &&
+      refraction.value === "atmospheric" &&
+      family &&
+      family.value !== "satellite" &&
+      site.source !== "custom"
+    ) {
+      refreshWeather();
+    }
+  }
+
+  function updateSiteUi() {
+    const source = selectedSiteSource();
+    const custom = document.getElementById("custom-site-fields");
+    const customName = document.getElementById("site-custom-name");
+    const latitude = document.getElementById("site-latitude");
+    const longitude = document.getElementById("site-longitude");
+    const height = document.getElementById("site-height");
+    const save = document.getElementById("save-custom-site");
+    const remove = document.getElementById("delete-saved-site");
+    const footer = document.getElementById("observer-footer");
+    const input = document.getElementById("site-input");
+    const name = document.getElementById("site-name");
+    const isCustom = source === "custom";
+    const isSaved = source === "saved";
+    const showCoordinates = isCustom || isSaved;
+
+    if (custom) custom.hidden = !showCoordinates;
+    if (customName) {
+      customName.readOnly = isSaved;
+      customName.required = false;
+    }
+    [latitude, longitude, height].forEach((field) => {
+      if (!field) return;
+      field.required = isCustom;
+      field.readOnly = isSaved;
+    });
+    if (save) save.hidden = !isCustom;
+    if (remove) remove.hidden = !isSaved;
+
+    if (isCustom && name && customName) name.value = customName.value.trim();
+    if (footer) {
+      const customLabel = customName && customName.value.trim() ? customName.value.trim() : "Custom site";
+      const label = isCustom ? customLabel : (input && input.value ? input.value : "Observing site");
+      footer.textContent = `Observer: ${label}`;
+    }
+  }
+
+  async function loadSites() {
+    try {
+      const payload = await jsonRequest("/api/sites");
+      if (Array.isArray(payload.sites) && payload.sites.length) {
+        siteState.sites = payload.sites;
+      }
+      if (payload.catalog_available === false && payload.detail) {
+        siteStatus(`${payload.detail}. SRT, saved sites, and Custom site remain available.`, "error");
+      }
+    } catch (error) {
+      siteStatus(
+        error instanceof Error ? error.message : "Could not load the observing-site catalog.",
+        "error"
+      );
+    }
+  }
+
+  function customSitePayload() {
+    const name = document.getElementById("site-custom-name");
+    const latitude = document.getElementById("site-latitude");
+    const longitude = document.getElementById("site-longitude");
+    const height = document.getElementById("site-height");
+    if (!name || !latitude || !longitude || !height) throw new Error("Custom site fields are unavailable.");
+    if (!name.value.trim()) throw new Error("Enter a site name before saving.");
+    if (!latitude.value || !longitude.value || !height.value) {
+      throw new Error("Enter latitude, longitude, and altitude before saving.");
+    }
+    return {
+      name: name.value.trim(),
+      latitude_deg: Number(latitude.value),
+      longitude_deg: Number(longitude.value),
+      height_m: Number(height.value),
+    };
+  }
+
+  async function saveCustomSite() {
+    const button = document.getElementById("save-custom-site");
+    try {
+      const payload = customSitePayload();
+      if (button) button.disabled = true;
+      const response = await jsonRequest("/api/sites/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      await loadSites();
+      selectSite(response.site);
+      siteStatus(`Saved observing site: ${response.site.name}.`, "success");
+    } catch (error) {
+      siteStatus(error instanceof Error ? error.message : "Could not save observing site.", "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function deleteSavedSite() {
+    const name = document.getElementById("site-name");
+    if (!name || !name.value) return;
+    if (!window.confirm(`Delete saved observing site "${name.value}"?`)) return;
+    const button = document.getElementById("delete-saved-site");
+    try {
+      if (button) button.disabled = true;
+      await jsonRequest(`/api/sites/custom?name=${encodeURIComponent(name.value)}`, { method: "DELETE" });
+      await loadSites();
+      const srt = siteState.sites.find((site) => site.source === "srt");
+      if (srt) selectSite(srt);
+      siteStatus("Saved observing site deleted.", "success");
+    } catch (error) {
+      siteStatus(error instanceof Error ? error.message : "Could not delete observing site.", "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function weatherStartTime() {
+    const dateInput = document.getElementById("start-date");
+    const timeInput = document.getElementById("start-time");
+    if (!dateInput || !timeInput || !dateInput.value || !timeInput.value) return "";
+    return `${dateInput.value}T${timeInput.value}Z`;
+  }
+
+  function weatherQuery() {
+    const source = document.getElementById("site-source");
+    const name = document.getElementById("site-name");
+    if (!source || !source.value) throw new Error("Choose an observing site first.");
+    const params = new URLSearchParams({
+      site_source: source.value,
+      site_name: name ? name.value : "",
+      at: weatherStartTime(),
+    });
+    if (source.value === "custom") {
+      const latitude = document.getElementById("site-latitude");
+      const longitude = document.getElementById("site-longitude");
+      const height = document.getElementById("site-height");
+      if (!latitude || !longitude || !height || !latitude.value || !longitude.value || !height.value) {
+        throw new Error("Enter custom latitude, longitude, and altitude before loading weather.");
+      }
+      params.set("latitude", latitude.value);
+      params.set("longitude", longitude.value);
+      params.set("height", height.value);
+    }
+    if (!params.get("at")) throw new Error("Choose a trajectory start time first.");
+    return params;
+  }
+
+  async function refreshWeather() {
+    const button = document.getElementById("refresh-weather");
+    const family = document.getElementById("target-family");
+    if (family && family.value === "satellite") return;
+
+    try {
+      const params = weatherQuery();
+      if (button) button.disabled = true;
+      weatherStatus("Loading Open-Meteo weather data...", "");
+      const payload = await jsonRequest(`/api/weather?${params.toString()}`);
+      const pressure = document.getElementById("pressure-hpa");
+      const temperature = document.getElementById("temperature-c");
+      const humidity = document.getElementById("relative-humidity");
+      const validity = document.getElementById("weather-validity");
+      if (pressure) pressure.value = Number(payload.pressure_hpa).toFixed(1);
+      if (temperature) temperature.value = Number(payload.temperature_c).toFixed(1);
+      if (humidity) humidity.value = Number(payload.relative_humidity_percent).toFixed(1);
+      if (validity) {
+        const validAt = String(payload.valid_at || "").replace("T", " ").replace("Z", " UTC");
+        validity.textContent = `${payload.source || "Open-Meteo"} · valid ${validAt}`;
+      }
+      weatherStatus("Weather loaded. Values remain editable.", "success");
+    } catch (error) {
+      weatherStatus(
+        error instanceof Error ? error.message : "Could not load weather data.",
+        "error"
+      );
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function updateRefractionUi(loadWeather = false) {
+    const refraction = document.getElementById("refraction-mode");
+    const controls = document.getElementById("atmospheric-controls");
+    const family = document.getElementById("target-family");
+    const refresh = document.getElementById("refresh-weather");
+    const note = document.getElementById("satellite-refraction-note");
+    const prefillHint = document.getElementById("weather-prefill-hint");
+    const weatherStatusNode = document.getElementById("weather-status");
+    const validity = document.getElementById("weather-validity");
+    if (!refraction || !controls || !family) return;
+
+    const enabled = refraction.value === "atmospheric";
+    const satellite = family.value === "satellite";
+    controls.hidden = !enabled;
+    document.querySelectorAll(".weather-value-field").forEach((field) => {
+      field.hidden = satellite;
+    });
+    document.querySelectorAll(".weather-input").forEach((field) => {
+      field.required = enabled && !satellite;
+    });
+    if (refresh) refresh.hidden = satellite;
+    if (prefillHint) prefillHint.hidden = satellite;
+    if (weatherStatusNode) weatherStatusNode.hidden = satellite;
+    if (note) note.hidden = !satellite;
+    if (satellite && validity) validity.textContent = "Legacy Pycraf atmospheric profile";
+    if (!satellite && validity && validity.textContent === "Legacy Pycraf atmospheric profile") {
+      validity.textContent = "";
+    }
+    if (enabled && !satellite && loadWeather && selectedSiteSource() !== "custom") {
+      refreshWeather();
+    }
+  }
+
+  function initEnvironmentControls() {
+    const siteInput = document.getElementById("site-input");
+    const siteToggle = document.getElementById("site-menu-toggle");
+    const customName = document.getElementById("site-custom-name");
+    const saveSite = document.getElementById("save-custom-site");
+    const deleteSite = document.getElementById("delete-saved-site");
+    const refraction = document.getElementById("refraction-mode");
+    const refresh = document.getElementById("refresh-weather");
+    if (!siteInput || siteInput.dataset.siteReady === "true") return;
+
+    siteInput.dataset.siteReady = "true";
+    siteInput.addEventListener("input", () => {
+      const source = document.getElementById("site-source");
+      const name = document.getElementById("site-name");
+      if (source) source.value = "";
+      if (name) name.value = "";
+      delete siteInput.dataset.selectedSite;
+      updateSiteUi();
+      renderSiteSuggestions(siteInput.value);
+    });
+    siteInput.addEventListener("focus", () => renderSiteSuggestions(""));
+    if (siteToggle) {
+      siteToggle.addEventListener("click", () => {
+        const menu = document.getElementById("site-suggestions");
+        if (menu && !menu.hidden) clearSiteSuggestions();
+        else renderSiteSuggestions("");
+      });
+    }
+    if (customName) customName.addEventListener("input", updateSiteUi);
+    if (saveSite) saveSite.addEventListener("click", saveCustomSite);
+    if (deleteSite) deleteSite.addEventListener("click", deleteSavedSite);
+    if (refraction) {
+      refraction.addEventListener("change", () => updateRefractionUi(true));
+    }
+    if (refresh) refresh.addEventListener("click", refreshWeather);
+
+    updateSiteUi();
+    updateRefractionUi(false);
+    loadSites();
+  }
+
   async function submitTrajectory(form) {
     const button = document.getElementById("generate-button");
     button.disabled = true;
@@ -693,6 +1071,7 @@
           target.innerHTML = await response.text();
           initAstronomicalSourceControls();
           initSatelliteControls();
+          updateRefractionUi(false);
           updateAutomaticOutputFilename();
         }
       } catch (_) {
@@ -704,6 +1083,8 @@
   }
 
   document.addEventListener("click", (event) => {
+    const siteField = document.querySelector(".site-search-field");
+    if (siteField && !siteField.contains(event.target)) clearSiteSuggestions();
     const sourceField = document.querySelector(".source-search-field");
     if (sourceField && !sourceField.contains(event.target)) clearSuggestions();
     const satelliteField = document.querySelector(".satellite-catalog-selection");
@@ -732,6 +1113,7 @@
     }
     const currentUtcButton = document.getElementById("use-current-utc");
     if (currentUtcButton) currentUtcButton.addEventListener("click", setCurrentUtc);
+    initEnvironmentControls();
     dynamicFields();
     initAstronomicalSourceControls();
     initSatelliteControls();

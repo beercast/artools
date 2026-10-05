@@ -12,6 +12,7 @@ from artools import (
     HorizontalCoordinates,
     OutputFileExistsError,
     OutputPathError,
+    ObserverSite,
     SatellitePosition,
     SatelliteRefractionParameters,
     SatelliteTarget,
@@ -215,6 +216,75 @@ def test_application_dispatches_all_modes_for_each_target_family() -> None:
                 ),
             )
             assert len(application.generate_trajectory(request)) == expected_count
+
+
+
+def test_application_forwards_selected_observing_site_to_all_target_families() -> None:
+    epoch = datetime(2026, 1, 1, tzinfo=UTC)
+    selected_site = ObserverSite(
+        identifier="selected_site",
+        name="Selected site",
+        latitude_deg=-23.0,
+        longitude_deg=-67.0,
+        height_m=5000.0,
+    )
+    seen_sites: list[ObserverSite] = []
+
+    class AstronomicalCalculator:
+        def calculate(self, coordinates, timestamp, site, atmosphere):
+            seen_sites.append(site)
+            return HorizontalCoordinates(100.0, 45.0)
+
+    class SolarCalculator:
+        def calculate(self, body, timestamp, site, atmosphere):
+            seen_sites.append(site)
+            return HorizontalCoordinates(120.0, 50.0)
+
+    class SatelliteCalculator:
+        def calculate(self, tle, timestamp, site):
+            seen_sites.append(site)
+            return SatellitePosition(HorizontalCoordinates(140.0, 55.0), 36000.0)
+
+    resolver = MappingAstronomicalSourceResolver(
+        {"TEST SOURCE": EquatorialCoordinates(10.0, 20.0)}
+    )
+    application = TrajectoryApplicationService(
+        astronomical_tracking=AstronomicalTrackingService(
+            resolver, AstronomicalCalculator()
+        ),
+        solar_system_tracking=SolarSystemTrackingService(SolarCalculator()),
+        satellite_tracking=SatelliteTrackingService(
+            SatelliteCalculator(), ZeroRefractionCalculator()
+        ),
+    )
+    requests = (
+        TrajectoryGenerationRequest(
+            target=AstronomicalSourceTarget("TEST SOURCE"),
+            parameters=parameters(
+                TargetFamily.ASTRONOMICAL_SOURCE, TrajectoryMode.TRACKING, epoch
+            ),
+            site=selected_site,
+        ),
+        TrajectoryGenerationRequest(
+            target=SolarSystemBodyTarget.from_name("moon"),
+            parameters=parameters(
+                TargetFamily.SOLAR_SYSTEM_BODY, TrajectoryMode.TRACKING, epoch
+            ),
+            site=selected_site,
+        ),
+        TrajectoryGenerationRequest(
+            target=SatelliteTarget(TLE),
+            parameters=parameters(
+                TargetFamily.SATELLITE, TrajectoryMode.TRACKING, epoch
+            ),
+            site=selected_site,
+        ),
+    )
+
+    for request in requests:
+        application.generate_trajectory(request)
+
+    assert seen_sites == [selected_site] * 9
 
 
 def test_generate_file_protects_existing_output_until_overwrite_is_explicit(

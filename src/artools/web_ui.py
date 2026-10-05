@@ -97,6 +97,81 @@ def render_index() -> str:
           </div>
         </div>
 
+        <div class="environment-grid">
+          <div class="site-search-field">
+            <span class="field-label">Observing site</span>
+            <div class="site-autocomplete">
+              <div class="site-input-row">
+                <input id="site-input" type="text" value="Sardinia Radio Telescope (SRT)"
+                  autocomplete="off" role="combobox" aria-autocomplete="list"
+                  aria-controls="site-suggestions" aria-haspopup="listbox" aria-expanded="false">
+                <button class="site-menu-toggle" type="button" id="site-menu-toggle"
+                  aria-label="Show observing sites" aria-controls="site-suggestions">&#9662;</button>
+              </div>
+              <input name="site_source" id="site-source" type="hidden" value="srt">
+              <input name="site_name" id="site-name" type="hidden" value="">
+              <div id="site-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
+            </div>
+            <div id="site-status" class="source-message" role="status" aria-live="polite"></div>
+          </div>
+
+          <label>
+            <span>Refraction</span>
+            <select name="refraction_mode" id="refraction-mode">
+              <option value="none" selected>No refraction</option>
+              <option value="atmospheric">Atmospheric refraction</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="custom-site-fields" class="custom-site-fields" hidden>
+          <div class="grid four custom-site-grid">
+            <label><span>Site name</span>
+              <input id="site-custom-name" type="text" autocomplete="off">
+            </label>
+            <label><span>Latitude <small>deg</small></span>
+              <input name="site_latitude_deg" id="site-latitude" type="number" min="-90" max="90" step="any">
+            </label>
+            <label><span>Longitude <small>deg</small></span>
+              <input name="site_longitude_deg" id="site-longitude" type="number" min="-180" max="180" step="any">
+            </label>
+            <label><span>Altitude <small>m</small></span>
+              <input name="site_height_m" id="site-height" type="number" step="any">
+            </label>
+          </div>
+          <div class="site-action-row">
+            <button class="secondary" type="button" id="save-custom-site">Save site</button>
+            <button class="secondary danger-button" type="button" id="delete-saved-site" hidden>Delete saved site</button>
+          </div>
+        </div>
+
+        <div id="atmospheric-controls" class="atmospheric-controls" hidden>
+          <div class="atmospheric-heading">
+            <div>
+              <strong>Atmospheric parameters</strong>
+              <span id="weather-validity" class="atmospheric-meta"></span>
+            </div>
+            <button class="secondary" type="button" id="refresh-weather">Refresh weather</button>
+          </div>
+          <p id="weather-prefill-hint" class="hint">Weather values can be loaded from Open-Meteo for the selected site and trajectory start time, then edited manually.</p>
+          <div class="grid four detail-grid atmospheric-grid">
+            <label class="weather-value-field"><span>Pressure <small>hPa</small></span>
+              <input name="pressure_hpa" id="pressure-hpa" class="weather-input" type="number" min="0" step="any">
+            </label>
+            <label class="weather-value-field"><span>Temperature <small>deg C</small></span>
+              <input name="temperature_c" id="temperature-c" class="weather-input" type="number" step="any">
+            </label>
+            <label class="weather-value-field"><span>Relative humidity <small>%</small></span>
+              <input name="relative_humidity" id="relative-humidity" class="weather-input" type="number" min="0" max="100" step="any">
+            </label>
+            <label><span>Observing frequency <small>GHz</small></span>
+              <input name="frequency_ghz" id="frequency-ghz" type="number" min="0.000001" step="any" value="22">
+            </label>
+          </div>
+          <p id="satellite-refraction-note" class="hint" hidden>Satellite refraction uses the legacy Pycraf mid-latitude summer atmospheric profile. The selected site altitude and observing frequency are used; the weather values are not.</p>
+          <div id="weather-status" class="source-message" role="status" aria-live="polite"></div>
+        </div>
+
         <div id="dynamic-fields">
           {render_dynamic_fields("astronomical", "track")}
         </div>
@@ -124,7 +199,7 @@ def render_index() -> str:
     </section>
 
     <footer>
-      <span>Observer: SRT site</span>
+      <span id="observer-footer">Observer: Sardinia Radio Telescope (SRT)</span>
       <span>Output: Auxiliary Telescope legacy trajectory format</span>
     </footer>
   </main>
@@ -165,7 +240,6 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
             </label>
           </div>
           <p class="hint source-hint">Remote SIMBAD search. Type at least two characters. Suggestions are limited; continue typing to refine the search, or enter a complete source name directly.</p>''')
-        chunks.append(_atmosphere_fields())
     elif family == "solar-system":
         options = "".join(
             f'<option value="{escape(body.value)}">{escape(body.value.title())}</option>'
@@ -177,7 +251,6 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
               <select name="body">{options}</select>
             </label>
           </div>''')
-        chunks.append(_atmosphere_fields())
     else:
         chunks.append('''
           <div class="target-grid satellite-target-grid">
@@ -230,22 +303,7 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
                   placeholder="SATELLITE NAME&#10;1 ...&#10;2 ..."></textarea>
               </label>
             </div>
-          </div>
-          <details class="advanced">
-            <summary>Satellite refraction</summary>
-            <div class="grid three detail-grid">
-              <label class="check-label">
-                <input name="refraction" type="checkbox" value="true">
-                <span>Enable legacy-compatible refraction</span>
-              </label>
-              <label><span>Frequency <small>GHz</small></span>
-                <input name="refraction_frequency_ghz" type="number" min="0.000001" step="any" value="22">
-              </label>
-              <label><span>Observer altitude <small>m</small></span>
-                <input name="refraction_altitude_m" type="number" min="0" step="any" value="650">
-              </label>
-            </div>
-          </details>''')
+          </div>''')
 
     if selected_mode != "track":
         chunks.append('''
@@ -257,27 +315,4 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
 
     chunks.append("</div>")
     return "".join(chunks)
-
-
-def _atmosphere_fields() -> str:
-    return '''
-      <details class="advanced">
-        <summary>Atmospheric parameters</summary>
-        <div class="grid four detail-grid">
-          <label><span>Pressure <small>hPa</small></span>
-            <input name="pressure_hpa" type="number" min="0" step="any" value="950">
-          </label>
-          <label><span>Temperature <small>deg C</small></span>
-            <input name="temperature_c" type="number" step="any" value="20">
-          </label>
-          <label><span>Relative humidity</span>
-            <input name="relative_humidity" type="number" min="0" step="any" value="45">
-          </label>
-          <label><span>Wavelength <small>m</small></span>
-            <input name="wavelength_m" type="number" min="0.000000001" step="any" value="0.013627">
-          </label>
-        </div>
-      </details>'''
-
-
 __all__ = ["render_dynamic_fields", "render_index"]

@@ -80,7 +80,14 @@ from .solar_system import (
     create_default_solar_system_raster_map_service,
     create_default_solar_system_tracking_service,
 )
-from .configuration import AUXILIARY_TELESCOPE, SRT_SITE
+from .configuration import AUXILIARY_TELESCOPE, SRT_DISPLAY_NAME, SRT_SITE
+from .sites import AstropyObservatoryCatalog, ObservatoryCatalog, SiteCatalogError
+from .weather import (
+    OPEN_METEO_FORECAST_ENDPOINT,
+    OpenMeteoWeatherClient,
+    WeatherConditions,
+    WeatherServiceError,
+)
 from .domain import (
     AtmosphericParameters,
     AstronomicalSourceTarget,
@@ -108,6 +115,7 @@ __all__ = [
     "TrajectoryFileResult",
     "TrajectoryGenerationRequest",
     "AUXILIARY_TELESCOPE",
+    "AstropyObservatoryCatalog",
     "AtmosphericParameters",
     "CELESTRAK_GP_ENDPOINT",
     "CELESTRAK_LEGACY_GROUP",
@@ -132,6 +140,7 @@ __all__ = [
     "create_default_solar_system_cross_scan_service",
     "create_default_solar_system_raster_map_service",
     "create_default_solar_system_tracking_service",
+    "SRT_DISPLAY_NAME",
     "SRT_SITE",
     "AuxiliaryTelescopeTrajectoryWriter",
     "ControlledSystem",
@@ -141,6 +150,9 @@ __all__ = [
     "HorizontalCoordinates",
     "MappingAstronomicalSourceResolver",
     "ObserverSite",
+    "ObservatoryCatalog",
+    "OPEN_METEO_FORECAST_ENDPOINT",
+    "OpenMeteoWeatherClient",
     "PycrafSatellitePositionCalculator",
     "PycrafSatelliteRefractionCalculator",
     "SatelliteAtmosphericProfile",
@@ -156,6 +168,7 @@ __all__ = [
     "SimbadSourceCatalog",
     "SimbadSourceCatalogError",
     "SimbadSourceSuggestion",
+    "SiteCatalogError",
     "TargetFamily",
     "Trajectory",
     "TrajectoryMode",
@@ -165,6 +178,8 @@ __all__ = [
     "TleCatalogStore",
     "TleData",
     "TleFormatError",
+    "WeatherConditions",
+    "WeatherServiceError",
     "create_default_satellite_cross_scan_service",
     "create_default_satellite_raster_map_service",
     "create_default_satellite_tracking_service",
