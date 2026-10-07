@@ -292,3 +292,182 @@ def test_cli_downloads_geo_catalog_saves_it_and_selects_satellite(
     assert capsys.readouterr().err == ""
     assert store.downloaded_path.exists()
     assert output.exists()
+
+
+def test_cli_pointing_offsets_are_converted_from_arcminutes_to_degrees(
+    tmp_path: Path,
+) -> None:
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    application = build_application(epoch)
+    output = tmp_path / "offsets.txt"
+    argv = ["astronomical", "track", "TEST SOURCE"] + common_args(output) + [
+        "--azimuth-sky-offset",
+        "6",
+        "--elevation-sky-offset",
+        "-3",
+    ]
+
+    request = request_from_namespace(build_parser().parse_args(argv), application)
+
+    assert request.azimuth_sky_offset_deg == pytest.approx(0.1)
+    assert request.elevation_sky_offset_deg == pytest.approx(-0.05)
+
+
+def test_cli_pointing_offsets_support_degrees_and_arcseconds(tmp_path: Path) -> None:
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    application = build_application(epoch)
+    output = tmp_path / "offset-units.txt"
+
+    degree_argv = ["solar-system", "track", "moon"] + common_args(output) + [
+        "--azimuth-sky-offset",
+        "0.25",
+        "--elevation-sky-offset",
+        "-0.5",
+        "--offset-unit",
+        "deg",
+    ]
+    degree_request = request_from_namespace(
+        build_parser().parse_args(degree_argv), application
+    )
+    assert degree_request.azimuth_sky_offset_deg == pytest.approx(0.25)
+    assert degree_request.elevation_sky_offset_deg == pytest.approx(-0.5)
+
+    arcsecond_argv = ["solar-system", "track", "moon"] + common_args(output) + [
+        "--azimuth-sky-offset",
+        "36",
+        "--elevation-sky-offset",
+        "-18",
+        "--offset-unit",
+        "arcsec",
+    ]
+    arcsecond_request = request_from_namespace(
+        build_parser().parse_args(arcsecond_argv), application
+    )
+    assert arcsecond_request.azimuth_sky_offset_deg == pytest.approx(0.01)
+    assert arcsecond_request.elevation_sky_offset_deg == pytest.approx(-0.005)
+
+
+def test_cli_custom_observing_site_is_forwarded_to_request(tmp_path: Path) -> None:
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    application = build_application(epoch)
+    output = tmp_path / "custom-site.txt"
+    argv = ["solar-system", "track", "moon"] + common_args(output) + [
+        "--site-latitude-deg",
+        "-74.6933",
+        "--site-longitude-deg",
+        "164.1",
+        "--site-height-m",
+        "15",
+        "--site-name",
+        "MZS",
+    ]
+
+    request = request_from_namespace(build_parser().parse_args(argv), application)
+
+    assert request.site.name == "MZS"
+    assert request.site.latitude_deg == pytest.approx(-74.6933)
+    assert request.site.longitude_deg == pytest.approx(164.1)
+    assert request.site.height_m == pytest.approx(15.0)
+
+
+def test_cli_named_observing_site_uses_astropy_catalog(
+    tmp_path: Path, monkeypatch
+) -> None:
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    application = build_application(epoch)
+    output = tmp_path / "named-site.txt"
+
+    class FakeCatalog:
+        def resolve(self, name: str):
+            assert name == "Test Observatory"
+            from artools.domain import ObserverSite
+
+            return ObserverSite(
+                identifier="test_observatory",
+                name=name,
+                latitude_deg=12.0,
+                longitude_deg=34.0,
+                height_m=567.0,
+            )
+
+    monkeypatch.setattr("artools.cli.AstropyObservatoryCatalog", FakeCatalog)
+    argv = ["solar-system", "track", "moon"] + common_args(output) + [
+        "--site",
+        "Test Observatory",
+    ]
+
+    request = request_from_namespace(build_parser().parse_args(argv), application)
+
+    assert request.site.name == "Test Observatory"
+    assert request.site.height_m == pytest.approx(567.0)
+
+
+def test_cli_astronomical_refraction_uses_frequency_and_percent_humidity(
+    tmp_path: Path,
+) -> None:
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    application = build_application(epoch)
+    output = tmp_path / "refraction.txt"
+    argv = ["astronomical", "track", "TEST SOURCE"] + common_args(output) + [
+        "--refraction",
+        "--frequency-ghz",
+        "100",
+        "--pressure-hpa",
+        "1010",
+        "--temperature-c",
+        "-8",
+        "--relative-humidity-percent",
+        "20",
+    ]
+
+    request = request_from_namespace(build_parser().parse_args(argv), application)
+
+    assert request.atmosphere is not None
+    assert request.atmosphere.pressure_hpa == pytest.approx(1010.0)
+    assert request.atmosphere.temperature_c == pytest.approx(-8.0)
+    assert request.atmosphere.relative_humidity == pytest.approx(0.2)
+    assert request.atmosphere.wavelength_m == pytest.approx(299_792_458.0 / 100e9)
+
+
+def test_cli_satellite_refraction_uses_selected_site_height_and_frequency(
+    tmp_path: Path,
+) -> None:
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    application = build_application(epoch)
+    output = tmp_path / "satellite-refraction.txt"
+    argv = [
+        "satellite",
+        "track",
+        "--tle-text",
+        TLE.to_three_line_string(),
+    ] + common_args(output) + [
+        "--site-latitude-deg",
+        "-74.6933",
+        "--site-longitude-deg",
+        "164.1",
+        "--site-height-m",
+        "15",
+        "--refraction",
+        "--frequency-ghz",
+        "100",
+    ]
+
+    request = request_from_namespace(build_parser().parse_args(argv), application)
+
+    assert request.satellite_refraction is not None
+    assert request.satellite_refraction.enabled is True
+    assert request.satellite_refraction.frequency_ghz == pytest.approx(100.0)
+    assert request.satellite_refraction.observer_altitude_m == pytest.approx(15.0)
+
+
+def test_cli_rejects_partial_custom_site(tmp_path: Path) -> None:
+    epoch = datetime(2026, 8, 31, 22, 30, tzinfo=UTC)
+    application = build_application(epoch)
+    output = tmp_path / "invalid-site.txt"
+    argv = ["solar-system", "track", "moon"] + common_args(output) + [
+        "--site-latitude-deg",
+        "39",
+    ]
+
+    with pytest.raises(ValueError, match="Custom sites require"):
+        request_from_namespace(build_parser().parse_args(argv), application)

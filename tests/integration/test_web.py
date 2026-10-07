@@ -241,6 +241,7 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     assert 'id="simbad-favorite-toggle"' in response.text
     assert "Remote SIMBAD search" in response.text
     assert "Suggestions are limited" in response.text
+    assert "enter a complete source name directly" in response.text
     assert 'id="site-input"' in response.text
     assert 'id="site-menu-toggle"' in response.text
     assert 'id="site-custom-name"' in response.text
