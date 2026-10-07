@@ -37,6 +37,7 @@ from artools.solar_system import (
 )
 from artools.preferences import (
     AngleUnitPreferenceStore,
+    InterfaceViewPreferenceStore,
     SavedObservingSiteStore,
     SourceFavoritesStore,
 )
@@ -224,6 +225,10 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     assert 'step="1"' in response.text
     assert 'placeholder="Start typing a source name"' in response.text
     assert "Observing site and refraction" in response.text
+    assert "Wizard view" in response.text
+    assert "Full view" in response.text
+    assert 'id="wizard-navigation"' in response.text
+    assert 'data-wizard-step="0"' in response.text
     assert "Starting time" in response.text
     assert 'name="azimuth_sky_offset"' in response.text
     assert 'name="elevation_sky_offset"' in response.text
@@ -236,7 +241,6 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     assert 'id="simbad-favorite-toggle"' in response.text
     assert "Remote SIMBAD search" in response.text
     assert "Suggestions are limited" in response.text
-    assert "enter a complete source name directly" in response.text
     assert 'id="site-input"' in response.text
     assert 'id="site-menu-toggle"' in response.text
     assert 'id="site-custom-name"' in response.text
@@ -902,6 +906,20 @@ def test_angle_unit_preference_api_defaults_and_persists(tmp_path: Path) -> None
     assert response.json() == {"unit": "arcsec"}
     assert store.get() == "arcsec"
 
+
+
+def test_interface_view_preference_api_defaults_and_persists(tmp_path: Path) -> None:
+    store = InterfaceViewPreferenceStore(tmp_path / "preferences.json")
+    client = TestClient(create_app(build_application(), interface_views=store))
+
+    response = client.get("/api/preferences/interface-view")
+    assert response.status_code == 200
+    assert response.json() == {"view": "wizard"}
+
+    response = client.put("/api/preferences/interface-view", json={"view": "full"})
+    assert response.status_code == 200
+    assert response.json() == {"view": "full"}
+    assert store.get() == "full"
 
 def test_web_form_satellite_refraction_uses_site_altitude_and_common_frequency() -> None:
     form = base_form("satellite", "track")

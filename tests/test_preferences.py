@@ -9,6 +9,7 @@ import pytest
 
 from artools.preferences import (
     AngleUnitPreferenceStore,
+    InterfaceViewPreferenceStore,
     PreferencesError,
     SavedObservingSiteStore,
     SourceFavoritesStore,
@@ -111,3 +112,15 @@ def test_angle_unit_defaults_to_arcmin_and_persists_last_choice(tmp_path: Path) 
 
     with pytest.raises(ValueError, match="Angle unit"):
         store.set("radian")
+
+
+def test_interface_view_defaults_to_wizard_and_persists_last_choice(tmp_path: Path) -> None:
+    path = tmp_path / "preferences.json"
+    store = InterfaceViewPreferenceStore(path)
+
+    assert store.get() == "wizard"
+    assert store.set("full") == "full"
+    assert InterfaceViewPreferenceStore(path).get() == "full"
+
+    with pytest.raises(ValueError, match="Interface view"):
+        store.set("compact")

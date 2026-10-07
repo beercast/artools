@@ -1094,6 +1094,120 @@
     }
   }
 
+  const interfaceViewState = { mode: "wizard", step: 0 };
+
+  function wizardCards() {
+    return Array.from(document.querySelectorAll("[data-wizard-step]"));
+  }
+
+  function currentWizardCard() {
+    return wizardCards().find(
+      (card) => Number(card.dataset.wizardStep) === interfaceViewState.step
+    ) || null;
+  }
+
+  function validateCurrentWizardStep() {
+    const card = currentWizardCard();
+    if (!card) return true;
+    const fields = Array.from(card.querySelectorAll("input, select, textarea"));
+    for (const field of fields) {
+      if (field.disabled || field.type === "hidden") continue;
+      if (!field.checkValidity()) {
+        field.reportValidity();
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function renderInterfaceView() {
+    const cards = wizardCards();
+    const container = document.getElementById("wizard-sections");
+    const navigation = document.getElementById("wizard-navigation");
+    const back = document.getElementById("wizard-back");
+    const next = document.getElementById("wizard-next");
+    const progress = document.getElementById("wizard-progress");
+    const output = document.getElementById("output-section");
+    if (!container || !navigation || !output || !cards.length) return;
+
+    const isWizard = interfaceViewState.mode === "wizard";
+    interfaceViewState.step = Math.max(0, Math.min(interfaceViewState.step, cards.length - 1));
+    container.dataset.interfaceView = interfaceViewState.mode;
+
+    cards.forEach((card) => {
+      const isCurrent = Number(card.dataset.wizardStep) === interfaceViewState.step;
+      card.classList.toggle("wizard-current", !isWizard || isCurrent);
+    });
+
+    document.querySelectorAll("[data-view-mode]").forEach((button) => {
+      const active = button.dataset.viewMode === interfaceViewState.mode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+
+    navigation.hidden = !isWizard;
+    output.hidden = isWizard && interfaceViewState.step !== cards.length - 1;
+    if (back) back.disabled = interfaceViewState.step === 0;
+    if (next) next.hidden = interfaceViewState.step === cards.length - 1;
+    if (progress) progress.textContent = `Step ${interfaceViewState.step + 1} of ${cards.length}`;
+  }
+
+  async function saveInterfaceViewPreference() {
+    try {
+      await jsonRequest("/api/preferences/interface-view", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ view: interfaceViewState.mode }),
+      });
+    } catch (_) {
+      // The selected view remains usable for the current session if persistence fails.
+    }
+  }
+
+  async function loadInterfaceViewPreference() {
+    try {
+      const payload = await jsonRequest("/api/preferences/interface-view");
+      if (["wizard", "full"].includes(payload.view)) {
+        interfaceViewState.mode = payload.view;
+      }
+    } catch (_) {
+      interfaceViewState.mode = "wizard";
+    }
+    renderInterfaceView();
+  }
+
+  function initInterfaceViewControls() {
+    document.querySelectorAll("[data-view-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const view = button.dataset.viewMode;
+        if (!view || !["wizard", "full"].includes(view)) return;
+        interfaceViewState.mode = view;
+        renderInterfaceView();
+        saveInterfaceViewPreference();
+      });
+    });
+
+    const back = document.getElementById("wizard-back");
+    if (back) {
+      back.addEventListener("click", () => {
+        interfaceViewState.step -= 1;
+        renderInterfaceView();
+      });
+    }
+
+    const next = document.getElementById("wizard-next");
+    if (next) {
+      next.addEventListener("click", () => {
+        if (!validateCurrentWizardStep()) return;
+        interfaceViewState.step += 1;
+        renderInterfaceView();
+      });
+    }
+
+    renderInterfaceView();
+    loadInterfaceViewPreference();
+  }
+
   async function dynamicFields() {
     const family = document.getElementById("target-family");
     const mode = document.getElementById("trajectory-mode");
@@ -1156,6 +1270,7 @@
     if (currentUtcButton) currentUtcButton.addEventListener("click", setCurrentUtc);
     const angleUnit = document.getElementById("pointing-offset-unit");
     if (angleUnit) angleUnit.addEventListener("change", saveAngleUnitPreference);
+    initInterfaceViewControls();
     initEnvironmentControls();
     updateTrajectoryParameterUi();
     loadAngleUnitPreference();
