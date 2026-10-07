@@ -1057,6 +1057,43 @@
     }
   }
 
+  function updateTrajectoryParameterUi() {
+    const mode = document.getElementById("trajectory-mode");
+    const halfSpanRow = document.getElementById("half-span-row");
+    const halfSpanInput = halfSpanRow ? halfSpanRow.querySelector('input[name="half_span_deg"]') : null;
+    if (!mode || !halfSpanRow) return;
+    const visible = mode.value !== "track";
+    halfSpanRow.hidden = !visible;
+    if (halfSpanInput) halfSpanInput.disabled = !visible;
+  }
+
+  async function loadAngleUnitPreference() {
+    const select = document.getElementById("pointing-offset-unit");
+    if (!select) return;
+    try {
+      const payload = await jsonRequest("/api/preferences/angle-unit");
+      if (["deg", "arcmin", "arcsec"].includes(payload.unit)) {
+        select.value = payload.unit;
+      }
+    } catch (_) {
+      select.value = "arcmin";
+    }
+  }
+
+  async function saveAngleUnitPreference() {
+    const select = document.getElementById("pointing-offset-unit");
+    if (!select) return;
+    try {
+      await jsonRequest("/api/preferences/angle-unit", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unit: select.value }),
+      });
+    } catch (_) {
+      // The selected unit remains usable for the current session if persistence fails.
+    }
+  }
+
   async function dynamicFields() {
     const family = document.getElementById("target-family");
     const mode = document.getElementById("trajectory-mode");
@@ -1072,6 +1109,7 @@
           initAstronomicalSourceControls();
           initSatelliteControls();
           updateRefractionUi(false);
+          updateTrajectoryParameterUi();
           updateAutomaticOutputFilename();
         }
       } catch (_) {
@@ -1079,7 +1117,10 @@
       }
     }
     family.addEventListener("change", refresh);
-    mode.addEventListener("change", refresh);
+    mode.addEventListener("change", () => {
+      updateTrajectoryParameterUi();
+      refresh();
+    });
   }
 
   document.addEventListener("click", (event) => {
@@ -1113,7 +1154,11 @@
     }
     const currentUtcButton = document.getElementById("use-current-utc");
     if (currentUtcButton) currentUtcButton.addEventListener("click", setCurrentUtc);
+    const angleUnit = document.getElementById("pointing-offset-unit");
+    if (angleUnit) angleUnit.addEventListener("change", saveAngleUnitPreference);
     initEnvironmentControls();
+    updateTrajectoryParameterUi();
+    loadAngleUnitPreference();
     dynamicFields();
     initAstronomicalSourceControls();
     initSatelliteControls();

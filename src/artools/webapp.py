@@ -39,6 +39,7 @@ from .domain import (
 )
 from .parsing import InputParseError, parse_utc_datetime
 from .preferences import (
+    AngleUnitPreferenceStore,
     PreferencesError,
     SavedObservingSiteStore,
     SourceFavoritesStore,
@@ -85,6 +86,7 @@ def create_app(
     simbad_catalog: SimbadSourceCatalog | None = None,
     favorites: SourceFavoritesStore | None = None,
     saved_sites: SavedObservingSiteStore | None = None,
+    angle_units: AngleUnitPreferenceStore | None = None,
     site_catalog: ObservatoryCatalog | None = None,
     weather: OpenMeteoWeatherClient | None = None,
     open_directory: Callable[[Path], None] | None = None,
@@ -101,6 +103,7 @@ def create_app(
     source_catalog = simbad_catalog or SimbadSourceCatalog()
     favorites_store = favorites or SourceFavoritesStore()
     saved_site_store = saved_sites or SavedObservingSiteStore()
+    angle_unit_store = angle_units or AngleUnitPreferenceStore()
     observatory_catalog = site_catalog or AstropyObservatoryCatalog()
     weather_client = weather or OpenMeteoWeatherClient()
     directory_opener = open_directory or _open_directory
@@ -300,6 +303,25 @@ def create_app(
             return JSONResponse({"detail": str(error)}, status_code=400)
         return JSONResponse({"favorites": list(updated)})
 
+    @app.get("/api/preferences/angle-unit")
+    def angle_unit_preference() -> JSONResponse:
+        try:
+            return JSONResponse({"unit": angle_unit_store.get()})
+        except PreferencesError as error:
+            return JSONResponse({"detail": str(error)}, status_code=500)
+
+    @app.put("/api/preferences/angle-unit")
+    async def save_angle_unit_preference(request: Request) -> JSONResponse:
+        try:
+            payload = await request.json()
+        except Exception:
+            return JSONResponse({"detail": "Invalid angle unit request"}, status_code=400)
+        unit = str(payload.get("unit", "")).strip() if isinstance(payload, dict) else ""
+        try:
+            return JSONResponse({"unit": angle_unit_store.set(unit)})
+        except (PreferencesError, ValueError) as error:
+            return JSONResponse({"detail": str(error)}, status_code=400)
+
     @app.get("/api/tle/downloaded")
     def downloaded_tle_catalog() -> JSONResponse:
         try:
@@ -471,6 +493,15 @@ def request_from_web_form(
     half_span = None if mode is TrajectoryMode.TRACKING else _float(
         values, "half_span_deg", "Half span", default=2.0
     )
+    pointing_unit = _pointing_offset_unit(values)
+    azimuth_sky_offset_deg = _angle_to_degrees(
+        _float(values, "azimuth_sky_offset", "Azimuth sky offset", default=0.0),
+        pointing_unit,
+    )
+    elevation_sky_offset_deg = _angle_to_degrees(
+        _float(values, "elevation_sky_offset", "Elevation sky offset", default=0.0),
+        pointing_unit,
+    )
     site = _observer_site(
         values,
         site_catalog or AstropyObservatoryCatalog(),
@@ -486,6 +517,8 @@ def request_from_web_form(
             target=AstronomicalSourceTarget(source_name),
             parameters=parameters,
             half_span_deg=half_span,
+            azimuth_sky_offset_deg=azimuth_sky_offset_deg,
+            elevation_sky_offset_deg=elevation_sky_offset_deg,
             site=site,
             atmosphere=_atmosphere(values) if refraction_enabled else None,
         )
@@ -497,6 +530,8 @@ def request_from_web_form(
             ),
             parameters=parameters,
             half_span_deg=half_span,
+            azimuth_sky_offset_deg=azimuth_sky_offset_deg,
+            elevation_sky_offset_deg=elevation_sky_offset_deg,
             site=site,
             atmosphere=_atmosphere(values) if refraction_enabled else None,
         )
@@ -506,6 +541,8 @@ def request_from_web_form(
         target=target,
         parameters=parameters,
         half_span_deg=half_span,
+        azimuth_sky_offset_deg=azimuth_sky_offset_deg,
+        elevation_sky_offset_deg=elevation_sky_offset_deg,
         site=site,
         satellite_refraction=SatelliteRefractionParameters(
             enabled=refraction_enabled,
@@ -525,6 +562,21 @@ def _saved_site_payload(site: ObserverSite) -> dict[str, object]:
         "longitude_deg": site.longitude_deg,
         "height_m": site.height_m,
     }
+
+
+def _pointing_offset_unit(values: Mapping[str, str]) -> str:
+    unit = _value(values, "pointing_offset_unit", "arcmin")
+    if unit not in {"deg", "arcmin", "arcsec"}:
+        raise WebInputError("Pointing offset unit must be deg, arcmin, or arcsec")
+    return unit
+
+
+def _angle_to_degrees(value: float, unit: str) -> float:
+    if unit == "deg":
+        return value
+    if unit == "arcmin":
+        return value / 60.0
+    return value / 3600.0
 
 def _favorite_key(name: str) -> str:
     value = name.strip()

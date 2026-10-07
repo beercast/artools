@@ -218,6 +218,25 @@ def test_application_dispatches_all_modes_for_each_target_family() -> None:
             assert len(application.generate_trajectory(request)) == expected_count
 
 
+def test_application_applies_constant_on_sky_pointing_offsets_after_generation() -> None:
+    epoch = datetime(2026, 1, 1, tzinfo=UTC)
+    application = build_test_application(epoch)
+    request = TrajectoryGenerationRequest(
+        target=AstronomicalSourceTarget("TEST SOURCE"),
+        parameters=parameters(
+            TargetFamily.ASTRONOMICAL_SOURCE, TrajectoryMode.TRACKING, epoch
+        ),
+        azimuth_sky_offset_deg=1.0,
+        elevation_sky_offset_deg=-0.5,
+    )
+
+    trajectory = application.generate_trajectory(request)
+    first = trajectory.points[0]
+
+    assert first.azimuth_deg == pytest.approx(100.0 + 1.0 / (2.0**0.5 / 2.0))
+    assert first.elevation_deg == pytest.approx(44.5)
+
+
 
 def test_application_forwards_selected_observing_site_to_all_target_families() -> None:
     epoch = datetime(2026, 1, 1, tzinfo=UTC)

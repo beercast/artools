@@ -88,6 +88,36 @@ class SourceFavoritesStore:
         _save_preferences(self.path, payload)
 
 
+class AngleUnitPreferenceStore:
+    """Persist the preferred angular unit used by the web interface."""
+
+    _ALLOWED_UNITS = {"deg", "arcmin", "arcsec"}
+
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = Path(path) if path is not None else default_preferences_path()
+        self._lock = _PREFERENCES_LOCK
+
+    def get(self) -> str:
+        """Return the saved angular unit, defaulting to arcmin."""
+        with self._lock:
+            payload = _load_preferences(self.path)
+            value = payload.get("angle_unit", "arcmin")
+            if not isinstance(value, str) or value not in self._ALLOWED_UNITS:
+                raise PreferencesError(f"Invalid ARTools preferences file: {self.path}")
+            return value
+
+    def set(self, unit: str) -> str:
+        """Validate and persist an angular unit."""
+        value = unit.strip()
+        if value not in self._ALLOWED_UNITS:
+            raise ValueError("Angle unit must be one of: deg, arcmin, arcsec")
+        with self._lock:
+            payload = _load_preferences(self.path)
+            payload["angle_unit"] = value
+            _save_preferences(self.path, payload)
+        return value
+
+
 class SavedObservingSiteStore:
     """Persist user-defined observing sites in the shared preferences file."""
 
@@ -256,6 +286,7 @@ def _identifier_component(value: str) -> str:
 
 
 __all__ = [
+    "AngleUnitPreferenceStore",
     "PreferencesError",
     "SavedObservingSiteStore",
     "SourceFavoritesStore",

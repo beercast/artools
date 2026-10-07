@@ -47,14 +47,30 @@ h1 { margin: 0; font-size: clamp(38px, 6vw, 66px); line-height: .95; letter-spac
 .grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .output-grid { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
 .satellite-grid { grid-template-columns: 1.5fr 1fr 1fr; align-items: start; }
-.parameter-grid { display: grid; gap: 16px; }
-.start-time-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
-.start-time-fieldset legend { margin: 0 0 7px; padding: 0; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .01em; }
-.start-time-fieldset legend small { font-weight: 700; color: var(--accent-dark); }
+.parameter-cards { display: grid; gap: 14px; }
+.parameter-card {
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 17px;
+}
+.parameter-card-site { background: #fbfdfe; }
+.parameter-card-source { background: #fcfcfb; }
+.parameter-card-time { background: #fbfcfd; }
+.parameter-card-trajectory { background: #fdfcfa; }
+.parameter-card h3 {
+  margin: 0 0 14px;
+  color: var(--ink);
+  font-size: 14px;
+  letter-spacing: -.01em;
+}
+.parameter-card h3 small { color: var(--accent-dark); font-size: 11px; font-weight: 700; }
 .start-time-controls { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .8fr) auto; gap: 12px; align-items: end; }
 .start-time-controls .utc-now-button { align-self: end; white-space: nowrap; min-height: 43px; }
 .sampling-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.environment-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 16px; align-items: start; margin-top: 17px; }
+.pointing-offset-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(140px, .45fr); gap: 16px; margin-top: 16px; }
+.pointing-offset-hint { margin: 7px 0 0; }
+.half-span-row { margin-top: 16px; max-width: 360px; }
+.environment-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 16px; align-items: start; }
 .site-search-field { min-width: 0; display: grid; gap: 7px; }
 .site-autocomplete { position: relative; min-width: 0; }
 .site-input-row { display: grid; grid-template-columns: minmax(0, 1fr) 43px; gap: 8px; }
@@ -94,8 +110,8 @@ input, select, textarea {
 }
 textarea { resize: vertical; min-height: 116px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; }
 input:focus, select:focus, textarea:focus { border-color: #6ba9bd; background: white; box-shadow: 0 0 0 3px rgba(23,107,135,.1); }
-.dynamic-block { margin-top: 17px; }
-.target-grid, .scan-grid { margin-top: 3px; }
+.dynamic-block { margin-top: 0; }
+.target-grid { margin-top: 0; }
 .hint { margin: 5px 0 13px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
 .astronomical-source-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 16px; align-items: start; }
@@ -244,7 +260,7 @@ footer { display: flex; justify-content: space-between; gap: 18px; color: #7a899
   .shell { padding-top: 28px; }
   .panel { padding: 22px; }
   .hero { align-items: flex-start; }
-  .grid.three, .grid.four, .satellite-grid, .astronomical-source-grid, .environment-grid { grid-template-columns: 1fr; }
+  .grid.three, .grid.four, .satellite-grid, .astronomical-source-grid, .environment-grid, .pointing-offset-grid { grid-template-columns: 1fr; }
   .start-time-controls { grid-template-columns: 1fr 1fr; }
   .start-time-controls .utc-now-button { grid-column: 1 / -1; justify-self: start; }
   .section-heading { align-items: flex-start; flex-direction: column; gap: 6px; }

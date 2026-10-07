@@ -136,7 +136,7 @@ File serialization     -> ARTools core
 The values submitted by the GUI are collected into a
 [`TrajectoryGenerationRequest`](src/artools/application.py), a simple ARTools
 object containing everything needed for one generation request: target, observing
-site, refraction settings, mode, timing parameters and mode-specific options.
+site, refraction settings, mode, timing parameters, pointing offsets and mode-specific options.
 
 #### Modifying trajectory generation
 
@@ -177,6 +177,10 @@ The main parameters are:
   Solar System targets, Astropy uses pressure, temperature, relative humidity and
   observing frequency. The GUI can obtain the atmospheric values for the selected
   site and start time, and they remain editable.
+- `Pointing offsets`: optional constant angular offsets on the sky. The azimuth
+  offset is converted to an azimuth-axis correction by dividing by
+  `cos(elevation)` for each trajectory point; the elevation offset is applied
+  directly. Both offsets default to zero.
 
 For `Tracking`, `Requested points` is the total number of trajectory points.
 
@@ -213,7 +217,9 @@ point per line:
 YYYY/MM/DD HH:MM:SS.mmm, DDD:MM:SS, DDD:MM:SS
 ```
 
-The three fields are timestamp, azimuth and elevation. The file has no header.
+The three fields are timestamp, azimuth and elevation. Pointing offsets, when
+specified, are applied to the generated trajectory before serialization. The file
+has no header.
 
 #### Using the [command-line interface](#command-line-interface)
 
@@ -334,8 +340,8 @@ Therefore:
   timing itself must change.
 
 `Start time`, `Sample interval`, `Requested points`, `Half span`, observing site,
-refraction settings, and the three trajectory modes have the same meaning
-described in the [Astronomical source section](#astronomical-source).
+refraction settings, pointing offsets, and the three trajectory modes have the
+same meaning described in the [Astronomical source section](#astronomical-source).
 
 The output is also identical: all modes produce a `Trajectory`, which is then
 serialized by `AuxiliaryTelescopeTrajectoryWriter` into the Auxiliary Telescope
@@ -494,8 +500,8 @@ Therefore:
   [`raster_map.py`](src/artools/raster_map.py) if the trajectory geometry or
   timing itself must change.
 
-`Start time`, `Sample interval`, `Requested points`, `Half span`, and the three
-trajectory modes have the same meaning described in the
+`Start time`, `Sample interval`, `Requested points`, `Half span`, pointing
+offsets, and the three trajectory modes have the same meaning described in the
 [Astronomical source section](#astronomical-source).
 
 Satellite refraction is handled separately from astronomical/Solar System
