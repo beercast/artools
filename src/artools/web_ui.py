@@ -284,7 +284,7 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
               </select>
             </label>
           </div>
-          <p class="hint source-hint">Remote SIMBAD search. Type at least two characters. Suggestions are limited; continue typing to refine the search.</p>''')
+          <p class="hint source-hint">Remote SIMBAD search. Type at least two characters. Suggestions are limited; continue typing to refine the search, or enter a complete source name directly.</p>''')
     elif family == "solar-system":
         options = "".join(
             f'<option value="{escape(body.value)}">{escape(body.value.title())}</option>'

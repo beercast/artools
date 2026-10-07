@@ -557,6 +557,12 @@ All modes use these options:
 | `--points N` | Point count, with mode-specific meaning described above. |
 | `--output PATH` | Output trajectory file. |
 | `--force` | Allow an existing output file to be overwritten. |
+| `--site NAME` | Use an observing site from the Astropy site catalog. SRT is the default. |
+| `--site-latitude-deg`, `--site-longitude-deg`, `--site-height-m` | Define a custom observing site. |
+| `--azimuth-sky-offset`, `--elevation-sky-offset` | Pointing offsets on the sky. Both default to zero. |
+| `--offset-unit {deg,arcmin,arcsec}` | Unit shared by both pointing offsets. Default: `arcmin`. |
+| `--frequency-ghz GHZ` | Observing frequency. Default: 22 GHz. |
+| `--refraction` | Enable the target-family refraction correction. |
 
 Cross scan and raster map additionally accept:
 
@@ -574,14 +580,17 @@ Syntax:
 ./artools astronomical MODE SOURCE [options]
 ```
 
-The source is resolved through SIMBAD. Optional atmospheric arguments are:
+The source is resolved through SIMBAD. When `--refraction` is enabled, the
+atmospheric arguments are:
 
 ```text
 --pressure-hpa
 --temperature-c
---relative-humidity
---wavelength-m
+--relative-humidity-percent
 ```
+
+`--wavelength-m` remains accepted for backwards compatibility; otherwise the
+wavelength is derived from `--frequency-ghz`.
 
 Example:
 
@@ -599,8 +608,8 @@ Syntax:
 ./artools solar-system MODE BODY [options]
 ```
 
-The body name is case-insensitive. The same optional atmospheric arguments used
-for astronomical sources are available.
+The body name is case-insensitive. The same refraction and atmospheric arguments
+used for astronomical sources are available.
 
 Example:
 
@@ -638,12 +647,12 @@ To provide one named three-line TLE directly:
 
 When `--tle-text` is used from a shell, quoting must preserve the three lines.
 
-Optional legacy-compatible refraction arguments are:
+Satellite refraction uses the observing frequency and the altitude of the
+selected observing site:
 
 ```text
 --refraction
---refraction-frequency-ghz VALUE
---refraction-altitude-m VALUE
+--frequency-ghz VALUE
 ```
 
 Example using a local multi-satellite catalog:
