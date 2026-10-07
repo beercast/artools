@@ -118,6 +118,36 @@ class AngleUnitPreferenceStore:
         return value
 
 
+class InterfaceViewPreferenceStore:
+    """Persist the preferred web-interface layout."""
+
+    _ALLOWED_VIEWS = {"wizard", "full"}
+
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = Path(path) if path is not None else default_preferences_path()
+        self._lock = _PREFERENCES_LOCK
+
+    def get(self) -> str:
+        """Return the saved interface view, defaulting to wizard."""
+        with self._lock:
+            payload = _load_preferences(self.path)
+            value = payload.get("interface_view", "wizard")
+            if not isinstance(value, str) or value not in self._ALLOWED_VIEWS:
+                raise PreferencesError(f"Invalid ARTools preferences file: {self.path}")
+            return value
+
+    def set(self, view: str) -> str:
+        """Validate and persist an interface view."""
+        value = view.strip()
+        if value not in self._ALLOWED_VIEWS:
+            raise ValueError("Interface view must be one of: wizard, full")
+        with self._lock:
+            payload = _load_preferences(self.path)
+            payload["interface_view"] = value
+            _save_preferences(self.path, payload)
+        return value
+
+
 class SavedObservingSiteStore:
     """Persist user-defined observing sites in the shared preferences file."""
 
@@ -287,6 +317,7 @@ def _identifier_component(value: str) -> str:
 
 __all__ = [
     "AngleUnitPreferenceStore",
+    "InterfaceViewPreferenceStore",
     "PreferencesError",
     "SavedObservingSiteStore",
     "SourceFavoritesStore",

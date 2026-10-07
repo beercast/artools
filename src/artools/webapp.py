@@ -40,6 +40,7 @@ from .domain import (
 from .parsing import InputParseError, parse_utc_datetime
 from .preferences import (
     AngleUnitPreferenceStore,
+    InterfaceViewPreferenceStore,
     PreferencesError,
     SavedObservingSiteStore,
     SourceFavoritesStore,
@@ -87,6 +88,7 @@ def create_app(
     favorites: SourceFavoritesStore | None = None,
     saved_sites: SavedObservingSiteStore | None = None,
     angle_units: AngleUnitPreferenceStore | None = None,
+    interface_views: InterfaceViewPreferenceStore | None = None,
     site_catalog: ObservatoryCatalog | None = None,
     weather: OpenMeteoWeatherClient | None = None,
     open_directory: Callable[[Path], None] | None = None,
@@ -104,6 +106,7 @@ def create_app(
     favorites_store = favorites or SourceFavoritesStore()
     saved_site_store = saved_sites or SavedObservingSiteStore()
     angle_unit_store = angle_units or AngleUnitPreferenceStore()
+    interface_view_store = interface_views or InterfaceViewPreferenceStore()
     observatory_catalog = site_catalog or AstropyObservatoryCatalog()
     weather_client = weather or OpenMeteoWeatherClient()
     directory_opener = open_directory or _open_directory
@@ -319,6 +322,25 @@ def create_app(
         unit = str(payload.get("unit", "")).strip() if isinstance(payload, dict) else ""
         try:
             return JSONResponse({"unit": angle_unit_store.set(unit)})
+        except (PreferencesError, ValueError) as error:
+            return JSONResponse({"detail": str(error)}, status_code=400)
+
+    @app.get("/api/preferences/interface-view")
+    def interface_view_preference() -> JSONResponse:
+        try:
+            return JSONResponse({"view": interface_view_store.get()})
+        except PreferencesError as error:
+            return JSONResponse({"detail": str(error)}, status_code=500)
+
+    @app.put("/api/preferences/interface-view")
+    async def save_interface_view_preference(request: Request) -> JSONResponse:
+        try:
+            payload = await request.json()
+        except Exception:
+            return JSONResponse({"detail": "Invalid interface view request"}, status_code=400)
+        view = str(payload.get("view", "")).strip() if isinstance(payload, dict) else ""
+        try:
+            return JSONResponse({"view": interface_view_store.set(view)})
         except (PreferencesError, ValueError) as error:
             return JSONResponse({"detail": str(error)}, status_code=400)
 

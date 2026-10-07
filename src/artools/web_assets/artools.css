@@ -47,7 +47,13 @@ h1 { margin: 0; font-size: clamp(38px, 6vw, 66px); line-height: .95; letter-spac
 .grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .output-grid { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
 .satellite-grid { grid-template-columns: 1.5fr 1fr 1fr; align-items: start; }
-.parameter-cards { display: grid; gap: 14px; }
+.view-switch-row { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+.view-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: #f5f7f8; }
+.view-switch-button { border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; padding: 7px 11px; cursor: pointer; }
+.view-switch-button:hover { color: var(--accent-dark); }
+.view-switch-button.active { background: white; color: var(--accent-dark); box-shadow: 0 1px 4px rgba(26, 50, 63, .12); }
+.view-switch-button:focus-visible { outline: 3px solid rgba(23,107,135,.15); outline-offset: 2px; }
+.wizard-sections { display: grid; gap: 14px; }
 .parameter-card {
   border: 1px solid var(--line);
   border-radius: 13px;
@@ -64,6 +70,10 @@ h1 { margin: 0; font-size: clamp(38px, 6vw, 66px); line-height: .95; letter-spac
   letter-spacing: -.01em;
 }
 .parameter-card h3 small { color: var(--accent-dark); font-size: 11px; font-weight: 700; }
+.wizard-sections[data-interface-view="wizard"] [data-wizard-step]:not(.wizard-current) { display: none; }
+.wizard-navigation { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; margin-top: 14px; }
+.wizard-progress { color: var(--muted); font-size: 12px; font-weight: 700; text-align: center; }
+.wizard-next { min-width: 92px; justify-content: center; }
 .start-time-controls { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .8fr) auto; gap: 12px; align-items: end; }
 .start-time-controls .utc-now-button { align-self: end; white-space: nowrap; min-height: 43px; }
 .sampling-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }

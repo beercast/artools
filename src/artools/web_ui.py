@@ -35,43 +35,47 @@ def render_index() -> str:
 
     <section class="panel">
       <form id="trajectory-form" action="/generate" method="post" enctype="multipart/form-data" data-generate-form>
-        <div class="section-heading">
-          <div><span class="step">01</span><h2>Trajectory</h2></div>
-          <p>Choose the telescope, target family, and trajectory mode.</p>
+        <div class="view-switch-row">
+          <div class="view-switch" role="group" aria-label="Interface view">
+            <button class="view-switch-button active" type="button" data-view-mode="wizard" aria-pressed="true">Wizard view</button>
+            <button class="view-switch-button" type="button" data-view-mode="full" aria-pressed="false">Full view</button>
+          </div>
         </div>
 
-        <div class="grid three">
-          <label>
-            <span>Telescope</span>
-            <select name="controlled_system" id="controlled-system">
-              <option value="auxiliary_telescope">Auxiliary Telescope</option>
-            </select>
-          </label>
-          <label>
-            <span>Target family</span>
-            <select name="target_family" id="target-family">
-              <option value="astronomical">Astronomical source</option>
-              <option value="solar-system">Solar System body</option>
-              <option value="satellite">Artificial satellite</option>
-            </select>
-          </label>
-          <label>
-            <span>Mode</span>
-            <select name="mode" id="trajectory-mode">
-              <option value="track">Tracking</option>
-              <option value="cross-scan">Cross scan</option>
-              <option value="map">Raster map</option>
-            </select>
-          </label>
-        </div>
+        <div class="wizard-sections" id="wizard-sections" data-interface-view="wizard">
+          <section class="trajectory-section wizard-current" data-wizard-step="0">
+            <div class="section-heading">
+              <div><span class="step">01</span><h2>Trajectory</h2></div>
+              <p>Choose the telescope, target family, and trajectory mode.</p>
+            </div>
 
-        <div class="section-heading compact">
-          <div><span class="step">02</span><h2>Parameters</h2></div>
-          <p>Configure the observing conditions, source, timing, and trajectory parameters.</p>
-        </div>
+            <div class="grid three">
+              <label>
+                <span>Telescope</span>
+                <select name="controlled_system" id="controlled-system">
+                  <option value="auxiliary_telescope">Auxiliary Telescope</option>
+                </select>
+              </label>
+              <label>
+                <span>Target family</span>
+                <select name="target_family" id="target-family">
+                  <option value="astronomical">Astronomical source</option>
+                  <option value="solar-system">Solar System body</option>
+                  <option value="satellite">Artificial satellite</option>
+                </select>
+              </label>
+              <label>
+                <span>Mode</span>
+                <select name="mode" id="trajectory-mode">
+                  <option value="track">Tracking</option>
+                  <option value="cross-scan">Cross scan</option>
+                  <option value="map">Raster map</option>
+                </select>
+              </label>
+            </div>
+          </section>
 
-        <div class="parameter-cards">
-          <section class="parameter-card parameter-card-site">
+          <section class="parameter-card parameter-card-site" data-wizard-step="1">
             <h3>Observing site and refraction</h3>
             <div class="environment-grid">
               <div class="site-search-field">
@@ -149,14 +153,14 @@ def render_index() -> str:
             </div>
           </section>
 
-          <section class="parameter-card parameter-card-source">
+          <section class="parameter-card parameter-card-source" data-wizard-step="2">
             <h3>Source</h3>
             <div id="dynamic-fields">
               {render_dynamic_fields("astronomical", "track")}
             </div>
           </section>
 
-          <section class="parameter-card parameter-card-time">
+          <section class="parameter-card parameter-card-time" data-wizard-step="3">
             <h3>Starting time <small>UTC</small></h3>
             <div class="start-time-controls">
               <label>
@@ -171,7 +175,7 @@ def render_index() -> str:
             </div>
           </section>
 
-          <section class="parameter-card parameter-card-trajectory">
+          <section class="parameter-card parameter-card-trajectory" data-wizard-step="4">
             <h3>Trajectory parameters</h3>
             <div class="sampling-grid">
               <label>
@@ -210,11 +214,18 @@ def render_index() -> str:
           </section>
         </div>
 
-        <div class="section-heading compact">
-          <div><span class="step">03</span><h2>Output</h2></div>
-          <p>The trajectory is generated locally and downloaded by the browser.</p>
+        <div class="wizard-navigation" id="wizard-navigation">
+          <button class="secondary" type="button" id="wizard-back">Back</button>
+          <span class="wizard-progress" id="wizard-progress" aria-live="polite">Step 1 of 5</span>
+          <button class="primary wizard-next" type="button" id="wizard-next">Next</button>
         </div>
-        <div class="grid output-grid">
+
+        <div id="output-section" hidden>
+          <div class="section-heading compact">
+            <div><span class="step">03</span><h2>Output</h2></div>
+            <p>The trajectory is generated locally and downloaded by the browser.</p>
+          </div>
+          <div class="grid output-grid">
           <label>
             <span>Download filename</span>
             <input name="output_name" id="output-name" type="text" value="trajectory.txt" required autocomplete="off" data-auto-filename="true">
@@ -226,8 +237,9 @@ def render_index() -> str:
             </button>
           </div>
         </div>
-        <div id="generation-status" class="generation-status" role="status" aria-live="polite">
-          Ready.
+          <div id="generation-status" class="generation-status" role="status" aria-live="polite">
+            Ready.
+          </div>
         </div>
       </form>
     </section>
@@ -272,7 +284,7 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
               </select>
             </label>
           </div>
-          <p class="hint source-hint">Remote SIMBAD search. Type at least two characters. Suggestions are limited; continue typing to refine the search, or enter a complete source name directly.</p>''')
+          <p class="hint source-hint">Remote SIMBAD search. Type at least two characters. Suggestions are limited; continue typing to refine the search.</p>''')
     elif family == "solar-system":
         options = "".join(
             f'<option value="{escape(body.value)}">{escape(body.value.title())}</option>'
