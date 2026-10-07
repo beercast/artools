@@ -67,12 +67,97 @@ def render_index() -> str:
 
         <div class="section-heading compact">
           <div><span class="step">02</span><h2>Parameters</h2></div>
-          <p>Start time is always interpreted explicitly as UTC.</p>
+          <p>Configure the observing conditions, source, timing, and trajectory parameters.</p>
         </div>
 
-        <div class="parameter-grid">
-          <fieldset class="start-time-fieldset">
-            <legend>Start time <small>UTC</small></legend>
+        <div class="parameter-cards">
+          <section class="parameter-card parameter-card-site">
+            <h3>Observing site and refraction</h3>
+            <div class="environment-grid">
+              <div class="site-search-field">
+                <span class="field-label">Observing site</span>
+                <div class="site-autocomplete">
+                  <div class="site-input-row">
+                    <input id="site-input" type="text" value="Sardinia Radio Telescope (SRT)"
+                      autocomplete="off" role="combobox" aria-autocomplete="list"
+                      aria-controls="site-suggestions" aria-haspopup="listbox" aria-expanded="false">
+                    <button class="site-menu-toggle" type="button" id="site-menu-toggle"
+                      aria-label="Show observing sites" aria-controls="site-suggestions">&#9662;</button>
+                  </div>
+                  <input name="site_source" id="site-source" type="hidden" value="srt">
+                  <input name="site_name" id="site-name" type="hidden" value="">
+                  <div id="site-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
+                </div>
+                <div id="site-status" class="source-message" role="status" aria-live="polite"></div>
+              </div>
+
+              <label>
+                <span>Refraction</span>
+                <select name="refraction_mode" id="refraction-mode">
+                  <option value="none" selected>No refraction</option>
+                  <option value="atmospheric">Atmospheric refraction</option>
+                </select>
+              </label>
+            </div>
+
+            <div id="custom-site-fields" class="custom-site-fields" hidden>
+              <div class="grid four custom-site-grid">
+                <label><span>Site name</span>
+                  <input id="site-custom-name" type="text" autocomplete="off">
+                </label>
+                <label><span>Latitude <small>deg</small></span>
+                  <input name="site_latitude_deg" id="site-latitude" type="number" min="-90" max="90" step="any">
+                </label>
+                <label><span>Longitude <small>deg</small></span>
+                  <input name="site_longitude_deg" id="site-longitude" type="number" min="-180" max="180" step="any">
+                </label>
+                <label><span>Altitude <small>m</small></span>
+                  <input name="site_height_m" id="site-height" type="number" step="any">
+                </label>
+              </div>
+              <div class="site-action-row">
+                <button class="secondary" type="button" id="save-custom-site">Save site</button>
+                <button class="secondary danger-button" type="button" id="delete-saved-site" hidden>Delete saved site</button>
+              </div>
+            </div>
+
+            <div id="atmospheric-controls" class="atmospheric-controls" hidden>
+              <div class="atmospheric-heading">
+                <div>
+                  <strong>Atmospheric parameters</strong>
+                  <span id="weather-validity" class="atmospheric-meta"></span>
+                </div>
+                <button class="secondary" type="button" id="refresh-weather">Refresh weather</button>
+              </div>
+              <p id="weather-prefill-hint" class="hint">Weather values can be loaded from Open-Meteo for the selected site and trajectory start time, then edited manually.</p>
+              <div class="grid four detail-grid atmospheric-grid">
+                <label class="weather-value-field"><span>Pressure <small>hPa</small></span>
+                  <input name="pressure_hpa" id="pressure-hpa" class="weather-input" type="number" min="0" step="any">
+                </label>
+                <label class="weather-value-field"><span>Temperature <small>deg C</small></span>
+                  <input name="temperature_c" id="temperature-c" class="weather-input" type="number" step="any">
+                </label>
+                <label class="weather-value-field"><span>Relative humidity <small>%</small></span>
+                  <input name="relative_humidity" id="relative-humidity" class="weather-input" type="number" min="0" max="100" step="any">
+                </label>
+                <label><span>Observing frequency <small>GHz</small></span>
+                  <input name="frequency_ghz" id="frequency-ghz" type="number" min="0.000001" step="any" value="22">
+                </label>
+              </div>
+              <p id="satellite-refraction-note" class="hint" hidden>Satellite refraction uses the legacy Pycraf mid-latitude summer atmospheric profile. The selected site altitude and observing frequency are used; the weather values are not.</p>
+              <div id="weather-status" class="source-message" role="status" aria-live="polite"></div>
+            </div>
+          </section>
+
+          <section class="parameter-card parameter-card-source">
+            <h3>Source</h3>
+            <div id="dynamic-fields">
+              {render_dynamic_fields("astronomical", "track")}
+            </div>
+          </section>
+
+          <section class="parameter-card parameter-card-time">
+            <h3>Starting time <small>UTC</small></h3>
             <div class="start-time-controls">
               <label>
                 <span>Date</span>
@@ -84,96 +169,45 @@ def render_index() -> str:
               </label>
               <button class="secondary utc-now-button" type="button" id="use-current-utc">Use current UTC time</button>
             </div>
-          </fieldset>
-          <div class="sampling-grid">
-            <label>
-              <span>Sample interval <small>s</small></span>
-              <input name="dt" type="number" required min="0.000001" step="any" value="1">
-            </label>
-            <label>
-              <span>Requested points</span>
-              <input name="points" type="number" required min="1" step="1" value="5">
-            </label>
-          </div>
-        </div>
+          </section>
 
-        <div class="environment-grid">
-          <div class="site-search-field">
-            <span class="field-label">Observing site</span>
-            <div class="site-autocomplete">
-              <div class="site-input-row">
-                <input id="site-input" type="text" value="Sardinia Radio Telescope (SRT)"
-                  autocomplete="off" role="combobox" aria-autocomplete="list"
-                  aria-controls="site-suggestions" aria-haspopup="listbox" aria-expanded="false">
-                <button class="site-menu-toggle" type="button" id="site-menu-toggle"
-                  aria-label="Show observing sites" aria-controls="site-suggestions">&#9662;</button>
-              </div>
-              <input name="site_source" id="site-source" type="hidden" value="srt">
-              <input name="site_name" id="site-name" type="hidden" value="">
-              <div id="site-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
+          <section class="parameter-card parameter-card-trajectory">
+            <h3>Trajectory parameters</h3>
+            <div class="sampling-grid">
+              <label>
+                <span>Sample interval <small>s</small></span>
+                <input name="dt" type="number" required min="0.000001" step="any" value="1">
+              </label>
+              <label>
+                <span>Requested points</span>
+                <input name="points" type="number" required min="1" step="1" value="5">
+              </label>
             </div>
-            <div id="site-status" class="source-message" role="status" aria-live="polite"></div>
-          </div>
-
-          <label>
-            <span>Refraction</span>
-            <select name="refraction_mode" id="refraction-mode">
-              <option value="none" selected>No refraction</option>
-              <option value="atmospheric">Atmospheric refraction</option>
-            </select>
-          </label>
-        </div>
-
-        <div id="custom-site-fields" class="custom-site-fields" hidden>
-          <div class="grid four custom-site-grid">
-            <label><span>Site name</span>
-              <input id="site-custom-name" type="text" autocomplete="off">
-            </label>
-            <label><span>Latitude <small>deg</small></span>
-              <input name="site_latitude_deg" id="site-latitude" type="number" min="-90" max="90" step="any">
-            </label>
-            <label><span>Longitude <small>deg</small></span>
-              <input name="site_longitude_deg" id="site-longitude" type="number" min="-180" max="180" step="any">
-            </label>
-            <label><span>Altitude <small>m</small></span>
-              <input name="site_height_m" id="site-height" type="number" step="any">
-            </label>
-          </div>
-          <div class="site-action-row">
-            <button class="secondary" type="button" id="save-custom-site">Save site</button>
-            <button class="secondary danger-button" type="button" id="delete-saved-site" hidden>Delete saved site</button>
-          </div>
-        </div>
-
-        <div id="atmospheric-controls" class="atmospheric-controls" hidden>
-          <div class="atmospheric-heading">
-            <div>
-              <strong>Atmospheric parameters</strong>
-              <span id="weather-validity" class="atmospheric-meta"></span>
+            <div class="pointing-offset-grid">
+              <label>
+                <span>Azimuth sky offset</span>
+                <input name="azimuth_sky_offset" type="number" step="any" value="0">
+              </label>
+              <label>
+                <span>Elevation sky offset</span>
+                <input name="elevation_sky_offset" type="number" step="any" value="0">
+              </label>
+              <label>
+                <span>Unit</span>
+                <select name="pointing_offset_unit" id="pointing-offset-unit">
+                  <option value="deg">deg</option>
+                  <option value="arcmin" selected>arcmin</option>
+                  <option value="arcsec">arcsec</option>
+                </select>
+              </label>
             </div>
-            <button class="secondary" type="button" id="refresh-weather">Refresh weather</button>
-          </div>
-          <p id="weather-prefill-hint" class="hint">Weather values can be loaded from Open-Meteo for the selected site and trajectory start time, then edited manually.</p>
-          <div class="grid four detail-grid atmospheric-grid">
-            <label class="weather-value-field"><span>Pressure <small>hPa</small></span>
-              <input name="pressure_hpa" id="pressure-hpa" class="weather-input" type="number" min="0" step="any">
-            </label>
-            <label class="weather-value-field"><span>Temperature <small>deg C</small></span>
-              <input name="temperature_c" id="temperature-c" class="weather-input" type="number" step="any">
-            </label>
-            <label class="weather-value-field"><span>Relative humidity <small>%</small></span>
-              <input name="relative_humidity" id="relative-humidity" class="weather-input" type="number" min="0" max="100" step="any">
-            </label>
-            <label><span>Observing frequency <small>GHz</small></span>
-              <input name="frequency_ghz" id="frequency-ghz" type="number" min="0.000001" step="any" value="22">
-            </label>
-          </div>
-          <p id="satellite-refraction-note" class="hint" hidden>Satellite refraction uses the legacy Pycraf mid-latitude summer atmospheric profile. The selected site altitude and observing frequency are used; the weather values are not.</p>
-          <div id="weather-status" class="source-message" role="status" aria-live="polite"></div>
-        </div>
-
-        <div id="dynamic-fields">
-          {render_dynamic_fields("astronomical", "track")}
+            <p class="hint pointing-offset-hint">Pointing offsets are angular offsets on the sky.</p>
+            <div id="half-span-row" class="half-span-row" hidden>
+              <label><span>Half span <small>deg</small></span>
+                <input name="half_span_deg" type="number" step="any" value="2">
+              </label>
+            </div>
+          </section>
         </div>
 
         <div class="section-heading compact">
@@ -210,7 +244,6 @@ def render_index() -> str:
 def render_dynamic_fields(target_family: str, mode: str) -> str:
     """Render target- and mode-specific form fields for dynamic replacement."""
     family = target_family if target_family in {"astronomical", "solar-system", "satellite"} else "astronomical"
-    selected_mode = mode if mode in {"track", "cross-scan", "map"} else "track"
 
     chunks: list[str] = ['<div class="dynamic-block">']
     if family == "astronomical":
@@ -221,7 +254,7 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
               <div class="source-input-row">
                 <div class="source-autocomplete">
                   <input name="source" id="simbad-source-input" type="text" required
-                    placeholder="W3(OH)" autocomplete="off" aria-autocomplete="list"
+                    placeholder="Start typing a source name" autocomplete="off" aria-autocomplete="list"
                     aria-controls="simbad-suggestions" aria-expanded="false">
                   <input name="source_canonical" id="simbad-source-canonical" type="hidden" value="">
                   <div id="simbad-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
@@ -303,14 +336,6 @@ def render_dynamic_fields(target_family: str, mode: str) -> str:
                   placeholder="SATELLITE NAME&#10;1 ...&#10;2 ..."></textarea>
               </label>
             </div>
-          </div>''')
-
-    if selected_mode != "track":
-        chunks.append('''
-          <div class="grid one scan-grid">
-            <label><span>Half span <small>deg</small></span>
-              <input name="half_span_deg" type="number" step="any" value="2">
-            </label>
           </div>''')
 
     chunks.append("</div>")

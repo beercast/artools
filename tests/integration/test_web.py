@@ -35,7 +35,11 @@ from artools.solar_system import (
     SolarSystemRasterMapService,
     SolarSystemTrackingService,
 )
-from artools.preferences import SavedObservingSiteStore, SourceFavoritesStore
+from artools.preferences import (
+    AngleUnitPreferenceStore,
+    SavedObservingSiteStore,
+    SourceFavoritesStore,
+)
 from artools.sites import SiteCatalogError
 from artools.weather import WeatherConditions
 from artools.webapp import create_app, request_from_web_form
@@ -218,6 +222,12 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
     assert 'id="output-name"' in response.text
     assert 'data-auto-filename="true"' in response.text
     assert 'step="1"' in response.text
+    assert 'placeholder="Start typing a source name"' in response.text
+    assert "Observing site and refraction" in response.text
+    assert "Starting time" in response.text
+    assert 'name="azimuth_sky_offset"' in response.text
+    assert 'name="elevation_sky_offset"' in response.text
+    assert 'name="pointing_offset_unit"' in response.text
     assert "Use current UTC time" in response.text
     assert 'class="start-time-controls"' in response.text
     assert 'class="sampling-grid"' in response.text
@@ -246,28 +256,29 @@ def test_index_is_self_contained_local_web_ui_with_download_form() -> None:
 
 
 @pytest.mark.parametrize(
-    ("family", "mode", "expected", "unexpected"),
+    ("family", "mode", "expected"),
     [
-        ("astronomical", "track", "Search SIMBAD source", "Half span"),
-        ("astronomical", "cross-scan", "Half span", "Download fresh TLE"),
-        ("astronomical", "map", "Half span", "Download fresh TLE"),
-        ("solar-system", "track", "Solar System body", "Half span"),
-        ("solar-system", "cross-scan", "Half span", "Download fresh TLE"),
-        ("solar-system", "map", "Half span", "Download fresh TLE"),
-        ("satellite", "track", "Download fresh TLE", "Pressure"),
-        ("satellite", "cross-scan", "Half span", "Pressure"),
-        ("satellite", "map", "Half span", "Pressure"),
+        ("astronomical", "track", "Search SIMBAD source"),
+        ("astronomical", "cross-scan", "Search SIMBAD source"),
+        ("astronomical", "map", "Search SIMBAD source"),
+        ("solar-system", "track", "Solar System body"),
+        ("solar-system", "cross-scan", "Solar System body"),
+        ("solar-system", "map", "Solar System body"),
+        ("satellite", "track", "Download fresh TLE"),
+        ("satellite", "cross-scan", "Download fresh TLE"),
+        ("satellite", "map", "Download fresh TLE"),
     ],
 )
 def test_dynamic_fields_cover_all_nine_family_mode_combinations(
-    family: str, mode: str, expected: str, unexpected: str
+    family: str, mode: str, expected: str
 ) -> None:
     client = TestClient(create_app(build_application()))
     response = client.get("/ui/fields", params={"target_family": family, "mode": mode})
 
     assert response.status_code == 200
     assert expected in response.text
-    assert unexpected not in response.text
+    assert "Half span" not in response.text
+    assert "Pressure" not in response.text
 
 
 @pytest.mark.parametrize(
@@ -860,6 +871,36 @@ def test_web_form_builds_common_astropy_atmosphere_from_gui_values() -> None:
     assert request.atmosphere.temperature_c == pytest.approx(17.4)
     assert request.atmosphere.relative_humidity == pytest.approx(0.48)
     assert request.atmosphere.wavelength_m == pytest.approx(299_792_458.0 / 22e9)
+
+
+def test_web_form_converts_sky_pointing_offsets_to_degrees() -> None:
+    form = base_form("astronomical", "track")
+    form["source"] = "TEST SOURCE"
+    form.update(
+        azimuth_sky_offset="6",
+        elevation_sky_offset="-3",
+        pointing_offset_unit="arcmin",
+        refraction_mode="none",
+    )
+
+    request = request_from_web_form(form, None, build_application())
+
+    assert request.azimuth_sky_offset_deg == pytest.approx(0.1)
+    assert request.elevation_sky_offset_deg == pytest.approx(-0.05)
+
+
+def test_angle_unit_preference_api_defaults_and_persists(tmp_path: Path) -> None:
+    store = AngleUnitPreferenceStore(tmp_path / "preferences.json")
+    client = TestClient(create_app(build_application(), angle_units=store))
+
+    response = client.get("/api/preferences/angle-unit")
+    assert response.status_code == 200
+    assert response.json() == {"unit": "arcmin"}
+
+    response = client.put("/api/preferences/angle-unit", json={"unit": "arcsec"})
+    assert response.status_code == 200
+    assert response.json() == {"unit": "arcsec"}
+    assert store.get() == "arcsec"
 
 
 def test_web_form_satellite_refraction_uses_site_altitude_and_common_frequency() -> None:

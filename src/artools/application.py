@@ -24,6 +24,7 @@ from .domain import (
     ObserverSite,
     TargetFamily,
     Trajectory,
+    TrajectoryPoint,
     TrajectoryMode,
     TrajectoryRequestParameters,
 )
@@ -78,12 +79,17 @@ class TrajectoryGenerationRequest:
 
     ``half_span_deg`` is used only by cross-scan and raster-map requests and
     corresponds to the legacy ``ANG`` parameter. ``None`` selects the strategy's
-    compatibility default of 2 degrees.
+    compatibility default of 2 degrees. Pointing offsets are expressed as
+    angular offsets on the sky in degrees. The azimuth component is converted
+    to an axis-coordinate correction with ``1 / cos(elevation)`` after the
+    nominal trajectory has been generated.
     """
 
     target: TrajectoryTarget
     parameters: TrajectoryRequestParameters
     half_span_deg: float | None = None
+    azimuth_sky_offset_deg: float = 0.0
+    elevation_sky_offset_deg: float = 0.0
     atmosphere: AtmosphericParameters | None = None
     satellite_refraction: SatelliteRefractionParameters | None = None
     site: ObserverSite = SRT_SITE
@@ -108,6 +114,10 @@ class TrajectoryGenerationRequest:
             raise TypeError(
                 "satellite_refraction must be SatelliteRefractionParameters or None"
             )
+        if not math.isfinite(self.azimuth_sky_offset_deg):
+            raise ValueError("azimuth_sky_offset_deg must be finite")
+        if not math.isfinite(self.elevation_sky_offset_deg):
+            raise ValueError("elevation_sky_offset_deg must be finite")
 
         expected_family = _target_family(self.target)
         if self.parameters.target_family is not expected_family:
@@ -221,66 +231,77 @@ class TrajectoryApplicationService:
         if family is TargetFamily.ASTRONOMICAL_SOURCE:
             target = cast(AstronomicalSourceTarget, request.target)
             if mode is TrajectoryMode.TRACKING:
-                return self._astronomical_tracking.track(
+                trajectory = self._astronomical_tracking.track(
                     target, request.parameters, request.atmosphere, request.site
                 )
-            if mode is TrajectoryMode.CROSS_SCAN:
-                return self._astronomical_cross_scan.cross_scan(
+            elif mode is TrajectoryMode.CROSS_SCAN:
+                trajectory = self._astronomical_cross_scan.cross_scan(
                     target,
                     request.parameters,
                     _cross_scan_parameters(request.half_span_deg),
                     request.atmosphere,
                     request.site,
                 )
-            return self._astronomical_raster_map.raster_map(
-                target,
-                request.parameters,
-                _raster_map_parameters(request.half_span_deg),
-                request.atmosphere,
-                request.site,
-            )
-
-        if family is TargetFamily.SOLAR_SYSTEM_BODY:
+            else:
+                trajectory = self._astronomical_raster_map.raster_map(
+                    target,
+                    request.parameters,
+                    _raster_map_parameters(request.half_span_deg),
+                    request.atmosphere,
+                    request.site,
+                )
+        elif family is TargetFamily.SOLAR_SYSTEM_BODY:
             target = cast(SolarSystemBodyTarget, request.target)
             if mode is TrajectoryMode.TRACKING:
-                return self._solar_system_tracking.track(
+                trajectory = self._solar_system_tracking.track(
                     target, request.parameters, request.atmosphere, request.site
                 )
-            if mode is TrajectoryMode.CROSS_SCAN:
-                return self._solar_system_cross_scan.cross_scan(
+            elif mode is TrajectoryMode.CROSS_SCAN:
+                trajectory = self._solar_system_cross_scan.cross_scan(
                     target,
                     request.parameters,
                     _cross_scan_parameters(request.half_span_deg),
                     request.atmosphere,
                     request.site,
                 )
-            return self._solar_system_raster_map.raster_map(
-                target,
-                request.parameters,
-                _raster_map_parameters(request.half_span_deg),
-                request.atmosphere,
-                request.site,
-            )
+            else:
+                trajectory = self._solar_system_raster_map.raster_map(
+                    target,
+                    request.parameters,
+                    _raster_map_parameters(request.half_span_deg),
+                    request.atmosphere,
+                    request.site,
+                )
+        else:
+            target = cast(SatelliteTarget, request.target)
+            if mode is TrajectoryMode.TRACKING:
+                trajectory = self._satellite_tracking.track(
+                    target,
+                    request.parameters,
+                    request.satellite_refraction,
+                    request.site,
+                )
+            elif mode is TrajectoryMode.CROSS_SCAN:
+                trajectory = self._satellite_cross_scan.cross_scan(
+                    target,
+                    request.parameters,
+                    _cross_scan_parameters(request.half_span_deg),
+                    request.satellite_refraction,
+                    request.site,
+                )
+            else:
+                trajectory = self._satellite_raster_map.raster_map(
+                    target,
+                    request.parameters,
+                    _raster_map_parameters(request.half_span_deg),
+                    request.satellite_refraction,
+                    request.site,
+                )
 
-        target = cast(SatelliteTarget, request.target)
-        if mode is TrajectoryMode.TRACKING:
-            return self._satellite_tracking.track(
-                target, request.parameters, request.satellite_refraction, request.site
-            )
-        if mode is TrajectoryMode.CROSS_SCAN:
-            return self._satellite_cross_scan.cross_scan(
-                target,
-                request.parameters,
-                _cross_scan_parameters(request.half_span_deg),
-                request.satellite_refraction,
-                request.site,
-            )
-        return self._satellite_raster_map.raster_map(
-            target,
-            request.parameters,
-            _raster_map_parameters(request.half_span_deg),
-            request.satellite_refraction,
-            request.site,
+        return _apply_sky_pointing_offsets(
+            trajectory,
+            request.azimuth_sky_offset_deg,
+            request.elevation_sky_offset_deg,
         )
 
     def generate_file(
@@ -411,6 +432,35 @@ def _raster_map_parameters(half_span_deg: float | None) -> RasterMapParameters |
     if half_span_deg is None:
         return None
     return RasterMapParameters(half_span_deg=half_span_deg)
+
+
+def _apply_sky_pointing_offsets(
+    trajectory: Trajectory,
+    azimuth_sky_offset_deg: float,
+    elevation_sky_offset_deg: float,
+) -> Trajectory:
+    """Apply constant on-sky pointing offsets to a generated trajectory."""
+    if azimuth_sky_offset_deg == 0.0 and elevation_sky_offset_deg == 0.0:
+        return trajectory
+
+    corrected_points: list[TrajectoryPoint] = []
+    for point in trajectory:
+        azimuth_deg = point.azimuth_deg
+        if azimuth_sky_offset_deg != 0.0:
+            cosine_elevation = math.cos(math.radians(point.elevation_deg))
+            if abs(cosine_elevation) < 1e-12:
+                raise ApplicationError(
+                    "Azimuth sky offset is undefined at an elevation of 90 degrees"
+                )
+            azimuth_deg += azimuth_sky_offset_deg / cosine_elevation
+        corrected_points.append(
+            TrajectoryPoint(
+                timestamp=point.timestamp,
+                azimuth_deg=azimuth_deg,
+                elevation_deg=point.elevation_deg + elevation_sky_offset_deg,
+            )
+        )
+    return Trajectory.from_points(corrected_points)
 
 
 __all__ = [

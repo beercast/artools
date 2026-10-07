@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from artools.preferences import (
+    AngleUnitPreferenceStore,
     PreferencesError,
     SavedObservingSiteStore,
     SourceFavoritesStore,
@@ -98,3 +99,15 @@ def test_favorites_and_saved_sites_preserve_each_other_in_shared_preferences(tmp
             "height_m": 3233.0,
         }
     ]
+
+
+def test_angle_unit_defaults_to_arcmin_and_persists_last_choice(tmp_path: Path) -> None:
+    path = tmp_path / "preferences.json"
+    store = AngleUnitPreferenceStore(path)
+
+    assert store.get() == "arcmin"
+    assert store.set("arcsec") == "arcsec"
+    assert AngleUnitPreferenceStore(path).get() == "arcsec"
+
+    with pytest.raises(ValueError, match="Angle unit"):
+        store.set("radian")
